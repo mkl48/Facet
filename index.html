@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Facet</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://mkl48.github.io/Facet/"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docusaurus_tag" content="default"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docsearch:docusaurus_tag" content="default"><meta data-rh="true" property="og:title" content="Facet"><link data-rh="true" rel="icon" href="/Facet/favicon.png"><link data-rh="true" rel="canonical" href="https://mkl48.github.io/Facet/"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/" hreflang="en"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/" hreflang="x-default"><script data-rh="true">function insertBanner(){var n=document.createElement("div");n.id="__docusaurus-base-url-issue-banner-container";n.innerHTML='\n<div id="__docusaurus-base-url-issue-banner" style="border: thick solid red; background-color: rgb(255, 230, 179); margin: 20px; padding: 20px; font-size: 20px;">\n   <p style="font-weight: bold; font-size: 30px;">Your Docusaurus site did not load properly.</p>\n   <p>A very common reason is a wrong site <a href="https://docusaurus.io/docs/docusaurus.config.js/#baseUrl" style="font-weight: bold;">baseUrl configuration</a>.</p>\n   <p>Current configured baseUrl = <span style="font-weight: bold; color: red;">/Facet/</span> </p>\n   <p>We suggest trying baseUrl = <span id="__docusaurus-base-url-issue-banner-suggestion-container" style="font-weight: bold; color: green;"></span></p>\n</div>\n',document.body.prepend(n);var e=document.getElementById("__docusaurus-base-url-issue-banner-suggestion-container"),s=window.location.pathname,o="/"===s.substr(-1)?s:s+"/";e.innerHTML=o}document.addEventListener("DOMContentLoaded",(function(){void 0===window.docusaurus&&insertBanner()}))</script><link rel="stylesheet" href="/Facet/assets/css/styles.ae967cf2.css">
-<script src="/Facet/assets/js/runtime~main.0fb23e49.js" defer="defer"></script>
-<script src="/Facet/assets/js/main.7e5b368e.js" defer="defer"></script>
+<script src="/Facet/assets/js/runtime~main.68b3b13d.js" defer="defer"></script>
+<script src="/Facet/assets/js/main.33551313.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -59,9 +59,10 @@ know what was isolated whole, what got sliced, and what was produced but fell ou
 hitbox.</li>
 <li><strong>Composable cleanup</strong> - <code>Cleanup = { Method = Enums.Cleanup.Rebuild / Fade / Destroy, Delay = number? }</code>,
 or pass your own <code>{ Method = function(voxel) ... end }</code>.</li>
-<li><strong>Eight Effects</strong> - <code>Explode</code>, <code>Anchored</code>, <code>Unstable</code> (real structural collapse - unanchors
-everything a Shatter call produced, including <code>Extra</code>, so removing a building&#x27;s support
-actually makes it fall), <code>Slice</code> (splits debris either side of a plane apart), <code>Blackhole</code> /
+<li><strong>Eight Effects</strong> - <code>Explode</code>, <code>Anchored</code>, <code>Chunk</code> (real structural collapse - welds everything
+a Shatter call produced, including <code>Extra</code>, into one unanchored rigid assembly that falls as a
+single piece once a building&#x27;s support is cut away, then fractures into smaller chunks on a
+hard enough landing), <code>Slice</code> (splits debris either side of a plane apart), <code>Blackhole</code> /
 <code>Whitehole</code> (pull toward / launch away from a point), <code>Scatter</code>, and <code>Shrink</code> - see
 <a href="https://mkl48.github.io/Facet/effects">docs/effects</a>.</li>
 <li><strong>Richer voxels</strong> - every produced <code>Voxel</code> carries <code>OriginalPosition</code>/<code>OriginalOrientation</code>
@@ -162,8 +163,9 @@ and you only pass <code>Config</code>:</p>
 })
 </code></pre>
 <p>See <a href="https://mkl48.github.io/Facet/effects">docs/effects</a> for the full Effects reference -
-<code>Explode</code>, <code>Anchored</code>, <code>Unstable</code> (real structural collapse - unanchors everything produced,
-including <code>Extra</code>, so a building actually falls once you cut its support out), <code>Slice</code>
+<code>Explode</code>, <code>Anchored</code>, <code>Chunk</code> (real structural collapse - welds everything produced, including
+<code>Extra</code>, into one unanchored assembly so a building falls as a single piece once you cut its
+support out, fracturing into smaller chunks on a hard landing), <code>Slice</code>
 (splits debris either side of a plane apart), <code>Blackhole</code>/<code>Whitehole</code> (pull toward/launch away
 from a point), and <code>Scatter</code>/<code>Shrink</code>.</p>
 <p>Omit <code>Hitbox</code> entirely and the whole target gets voxelized with no detection step. Every
