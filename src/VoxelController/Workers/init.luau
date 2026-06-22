@@ -30,8 +30,9 @@ local POOL_SIZE = 4
 	@within Workers
 	.Grid Grid -- a part's already-built grid (Voxelize.buildGrid) - plain data, no Instance reference.
 	.Hitbox PointHitbox? -- the classification hitbox, in the same Instance-free shape Voxelize.classifyPoint expects. nil means "no hitbox" - every cell classifies Partial.
+	.GreedyMeshing boolean? -- Config.GreedyMeshing, read on the calling thread and carried across the Actor boundary as plain data (defaults true).
 ]=]
-export type Job = { Grid: Voxelize.Grid, Hitbox: Voxelize.PointHitbox? }
+export type Job = { Grid: Voxelize.Grid, Hitbox: Voxelize.PointHitbox?, GreedyMeshing: boolean? }
 
 --[=[
 	@class Workers
@@ -54,7 +55,7 @@ local function runInline(job: Job): { Voxelize.MergedVoxel }
 		else function()
 			return "Partial"
 		end
-	return Voxelize.computeCells(job.Grid, classify)
+	return Voxelize.computeCells(job.Grid, classify, job.GreedyMeshing)
 end
 
 local function buildPool(): { Actor }?
@@ -130,7 +131,7 @@ function Workers.computeAsync(jobs: { Job }): { { Voxelize.MergedVoxel } }
 				done:Fire()
 			end
 		end)
-		actor:SendMessage("ComputeCells", reply, job.Grid, job.Hitbox)
+		actor:SendMessage("ComputeCells", reply, job.Grid, job.Hitbox, job.GreedyMeshing)
 	end
 
 	if remaining > 0 then

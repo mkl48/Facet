@@ -15,10 +15,25 @@
 local VoxelController = require(script.VoxelController)
 local PendingResult = require(script.VoxelController.PendingResult)
 local Enums = require(script.Enums)
+local ConfigModule = require(script.Config)
 
 local Facet = {}
 
 Facet.Enums = Enums
+
+export type Config = ConfigModule.Config
+
+--[=[
+	@within Facet
+	Merges feature-flag overrides into Facet's shared [Config] - `ObjectPooling` (default
+	`false`), `Multithreading` (default `true`), `GreedyMeshing` (default `true`). Call it once,
+	anywhere, before or while using Facet; every controller reads the same table, so flipping a
+	flag takes effect on the next `Shatter`/`Cleanup` call, not just ones from controllers
+	defined afterward.
+]=]
+function Facet.Configure(overrides: { ObjectPooling: boolean?, Multithreading: boolean?, GreedyMeshing: boolean? })
+	ConfigModule.configure(overrides)
+end
 
 -- Config tables - everything a Define()/Shatter() call accepts. See VoxelController for the
 -- @interface doc blocks on each of these.

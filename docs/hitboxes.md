@@ -49,3 +49,28 @@ hitbox needed.
 `ViewVector` - there's no multi-hit walk through everything the ray passes through. If you
 need every part along a ray, run your own `workspace:Raycast` loop and pass the resulting
 parts through as a `Region`/`Box` hitbox per hit instead.
+
+## Indiscriminate destruction (no Target)
+
+Every example above scopes the hitbox to one target's descendants. Drop the `Target` argument
+*and* leave the controller without a `Host`, and the hitbox becomes the only scope - `Shatter`
+queries the engine directly (`workspace:GetPartBoundsInBox`/`GetPartBoundsInRadius`, or
+`workspace:Raycast`) instead of narrowing a known candidate list through the octree:
+
+```lua
+local Demolition = Facet.Define({ Type = Enums.ControllerType.Relative, RecommendedVoxelSize = 1 })
+
+Demolition:Shatter({
+    Hitbox = {
+        Size = Vector3.new(24, 24, 24),
+        CFrame = explosionCFrame,
+        QueryType = Enums.QueryType.Sphere,
+        Scope = workspace.City, -- optional - defaults to the whole workspace
+    },
+})
+```
+
+A `Hitbox` is required for this form - omitting both `Target` and `Hitbox` leaves Shatter with
+no scope at all and it errors. `Scope` (default the whole `workspace`) restricts the native
+query to one instance's descendants, the same way a `Target` would for the scoped form above.
+`Result.Instance` comes back `nil`, since no single Target/Host exists for this call.

@@ -43,15 +43,31 @@ local Enums = {}
 
 --[=[
 	@within Enums
-	@prop Effects {Explode: "Explode", Anchored: "Anchored"}
-	Keys into `ShatterConfig.Effects`. `Explode = {Radius: number}` pushes the voxel outward
-	from the Shatter origin; `Anchored = boolean` sets the produced part's `Anchored` directly.
+	@prop Effects {Explode: "Explode", Anchored: "Anchored", Unstable: "Unstable", Slice: "Slice", Blackhole: "Blackhole", Whitehole: "Whitehole", Scatter: "Scatter", Shrink: "Shrink"}
+	Keys into `ShatterConfig.Effects`. See [docs/effects](https://mkl48.github.io/Facet/effects) for
+	the full config shape each one reads:
+
+	- `Explode = {Radius: number}` - pushes the voxel outward from the Shatter origin.
+	- `Anchored = boolean` - sets the produced part's `Anchored` directly.
+	- `Unstable = boolean` - unanchors every produced voxel (Partial *and* Extra) regardless of
+	  `Anchored`/the original part's own state, with a small random spin, so a cut that removes a
+	  building's support actually lets the remainder fall under gravity instead of floating.
+	- `Slice = {Normal: Vector3?, Speed: number?}` - splits voxels either side of a plane (through
+	  the Shatter origin, facing `Normal`) apart along that normal at `Speed` studs/sec.
+	- `Blackhole = {Position: Vector3?, Duration: number?}` - tweens the voxel into `Position`
+	  while shrinking it to nothing, then destroys/releases it.
+	- `Whitehole = {Position: Vector3?, Speed: number?}` - launches the voxel directly away from
+	  `Position` at `Speed` studs/sec (like `Explode`, but a fixed point and speed instead of a
+	  radius).
+	- `Scatter = {Speed: number?}` - launches the voxel in a random direction at `Speed` studs/sec.
+	- `Shrink = {Duration: number?}` - tweens the voxel's `Size` down to nothing over `Duration`
+	  seconds, then destroys/releases it.
 ]=]
 
 --[=[
 	@within Enums
 	@prop Cleanup {Rebuild: "Rebuild", Fade: "Fade", Destroy: "Destroy"}
-	Passed as `ShatterConfig.Cleanup`, or to `Voxel:Cleanup` directly. `Destroy` is instant;
+	Passed as `ShatterConfig.Cleanup.Method`, or to `Voxel:Cleanup` directly. `Destroy` is instant;
 	`Fade` tweens `Transparency` to 1 then destroys; `Rebuild` tweens the voxel's `CFrame` back
 	to `OriginalCFrame` and never destroys it.
 ]=]
@@ -75,7 +91,7 @@ export type HitboxType = "Whole" | "Partial"
 -- distance test, and Raycast casts directly (single closest hit - see README).
 export type QueryType = "Raycast" | "Box" | "Sphere" | "Region"
 
-export type Effects = "Explode" | "Anchored"
+export type Effects = "Explode" | "Anchored" | "Unstable" | "Slice" | "Blackhole" | "Whitehole" | "Scatter" | "Shrink"
 
 export type Cleanup = "Rebuild" | "Fade" | "Destroy"
 
@@ -106,6 +122,12 @@ Enums.QueryType = {
 Enums.Effects = {
 	Explode = "Explode",
 	Anchored = "Anchored",
+	Unstable = "Unstable",
+	Slice = "Slice",
+	Blackhole = "Blackhole",
+	Whitehole = "Whitehole",
+	Scatter = "Scatter",
+	Shrink = "Shrink",
 }
 
 Enums.Cleanup = {

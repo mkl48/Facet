@@ -9,6 +9,7 @@ classOrder = [
     "Voxel",
     "PendingResult",
     "Workers",
+    "Config",
     "Enums",
 ]
 [docusaurus]

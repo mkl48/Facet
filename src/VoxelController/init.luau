@@ -19,6 +19,10 @@ local VoxelModule = require(script.Voxel)
 local Voxelize = require(script.Voxelize)
 local Octree = require(script.Octree)
 local Workers = require(script.Workers)
+local ConfigModule = require(script.Parent.Config)
+local Pool = require(script.Parent.Pool)
+
+local Config = ConfigModule.Config
 
 local Voxel = VoxelModule.new
 local applyEffects = VoxelModule.applyEffects
@@ -63,6 +67,7 @@ end
 	.HitboxType Enums.HitboxType? -- `Partial` (default, voxelizes whatever's detected) | `Whole` (returns fully-contained parts untouched, no slicing).
 	.Shape Enum.PartType? -- reserved for a future visualized-hitbox helper; not read by Shatter today.
 	.Copy Instance? -- reserved for a future "clone the hitbox as a real part" helper; not read by Shatter today.
+	.Scope Instance? -- only read when `Shatter` is called with no Target and no Host (indiscriminate destruction) - restricts the workspace-wide query to this instance's descendants. Defaults to the whole `workspace`. Ignored otherwise (a Target/Host already scopes the search).
 ]=]
 export type HitboxConfig = {
 	Size: Vector3?,
@@ -73,21 +78,31 @@ export type HitboxConfig = {
 	HitboxType: Enums.HitboxType?,
 	Shape: Enum.PartType?,
 	Copy: Instance?,
+	Scope: Instance?,
+}
+
+--[=[
+	@interface CleanupConfig
+	@within VoxelController
+	.Method (Enums.Cleanup | (Voxel) -> ())? -- `Rebuild` | `Fade` | `Destroy`, or your own `function(voxel) ... end`. Only ever runs against `Result.Voxels.Partial`.
+	.Delay number? -- seconds the Cleanup tween takes (`Fade`/`Rebuild` only - `Destroy` is instant). Defaults to 0.5 for Fade, 0.6 for Rebuild.
+]=]
+export type CleanupConfig = {
+	Method: (Enums.Cleanup | ((any) -> ()))?,
+	Delay: number?,
 }
 
 --[=[
 	@interface ShatterConfig
 	@within VoxelController
 	.Hitbox HitboxConfig? -- scopes detection to a region of the target. Omit entirely to voxelize the whole target.
-	.Effects {[string]: any}? -- keyed by `Enums.Effects` (`Explode = { Radius: number }`, `Anchored = boolean`), or the string key `"Velocity"` for a raw `Vector3`.
-	.Cleanup (Enums.Cleanup | (Voxel) -> ())? -- `Rebuild` | `Fade` | `Destroy`, or your own `function(voxel) ... end`. Only ever runs against `Result.Voxels.Partial`.
-	.CleanupDuration number? -- seconds the Cleanup tween takes (Fade/Rebuild only - Destroy is instant). Defaults to 0.5 for Fade, 0.6 for Rebuild.
+	.Effects {[string]: any}? -- keyed by `Enums.Effects` - see [Enums.Effects] for the full list and each one's config shape.
+	.Cleanup CleanupConfig? -- `{ Method = Enums.Cleanup.X, Delay = number? }`, or your own `{ Method = function(voxel) ... end }`.
 ]=]
 export type ShatterConfig = {
 	Hitbox: HitboxConfig?,
 	Effects: { [string]: any }?,
-	Cleanup: (Enums.Cleanup | ((any) -> ()))?,
-	CleanupDuration: number?,
+	Cleanup: CleanupConfig?,
 }
 
 --[=[
@@ -272,6 +287,45 @@ function VoxelController:_queryHitbox(hitbox: HitboxConfig, candidates: { BasePa
 	return matches
 end
 
+-- The no-Target/no-Host path ("indiscriminate destruction"): there's no candidate list to
+-- narrow with our own Octree, so the hitbox itself queries the engine's native spatial index
+-- directly (workspace:GetPartBoundsInBox/Radius, or :Raycast) over `hitbox.Scope` (default the
+-- whole workspace) instead. Those calls already do an exact overlap test, not just broad-phase.
+function VoxelController:_queryWorkspace(hitbox: HitboxConfig): { BasePart }
+	local queryType = hitbox.QueryType or Enums.QueryType.Box
+	local size = hitbox.Size or Vector3.new(4, 4, 4)
+	local cframe = hitbox.CFrame or CFrame.new()
+	local scope = hitbox.Scope
+
+	if queryType == Enums.QueryType.Raycast then
+		local direction = hitbox.ViewVector or cframe.LookVector
+		local length = if size.Z > 0 then size.Z else math.max(direction.Magnitude, 1)
+		direction = if direction.Magnitude > 1e-3 then direction.Unit * length else cframe.LookVector * length
+
+		local params = RaycastParams.new()
+		if scope then
+			params.FilterType = Enum.RaycastFilterType.Include
+			params.FilterDescendantsInstances = { scope }
+		end
+		local result = workspace:Raycast(cframe.Position, direction, params)
+		if result and result.Instance and result.Instance:IsA("BasePart") then
+			return { result.Instance :: BasePart }
+		end
+		return {}
+	end
+
+	local overlap = OverlapParams.new()
+	overlap.FilterType = Enum.RaycastFilterType.Include
+	overlap.FilterDescendantsInstances = { scope or workspace }
+
+	if queryType == Enums.QueryType.Sphere then
+		return workspace:GetPartBoundsInRadius(cframe.Position, size.X / 2, overlap)
+	end
+
+	local box = if queryType == Enums.QueryType.Region then CFrame.new(cframe.Position) else cframe
+	return workspace:GetPartBoundsInBox(box, size, overlap)
+end
+
 -- Reads `part` once (Size/CFrame/Color/Material - the only Instance access in this whole
 -- pipeline) and lays out its grid, packaged with a plain (HitboxConfig-shaped but Instance-free)
 -- hitbox alongside it. The result is what a Workers job actually carries across the Actor
@@ -280,7 +334,7 @@ function VoxelController:_buildJob(part: BasePart, config: ShatterConfig, hitbox
 	local voxelSize = (config :: any).Size or self:_voxelSizeFor(part)
 	local grid = Voxelize.buildGrid(part, voxelSize)
 	local pointHitbox = if hitbox then { Size = hitbox.Size, CFrame = hitbox.CFrame, QueryType = hitbox.QueryType } else nil
-	return { Grid = grid, Hitbox = pointHitbox }
+	return { Grid = grid, Hitbox = pointHitbox, GreedyMeshing = Config.GreedyMeshing }
 end
 
 -- Turns an already-computed cell list (Voxelize.computeCells' output, from either the inline
@@ -292,16 +346,20 @@ function VoxelController:_emitCells(part: BasePart, config: ShatterConfig, origi
 	local produced: { [string]: { VoxelModule.Voxel } } = { Whole = {}, Partial = {}, Extra = {} }
 
 	for _, data in cells do
-		local instance = Instance.new("Part")
+		local instance = if Config.ObjectPooling then Pool.acquire() else Instance.new("Part")
 		instance.Size = data.Size
 		instance.CFrame = data.CFrame
 		instance.Color = data.Color
 		instance.Material = data.Material
+		instance.Transparency = 0
 		instance.Anchored = wasAnchored
+		instance.CanCollide = true
+		instance.CanQuery = true
+		instance.CanTouch = true
 		instance.Parent = parent
 
 		applyEffects(instance, config.Effects, origin or part.Position)
-		table.insert(produced[data.Kind], Voxel(instance, data.Kind, self))
+		table.insert(produced[data.Kind], Voxel(instance, data.Kind, self, origin))
 	end
 
 	part:Destroy()
@@ -320,7 +378,7 @@ function VoxelController:_voxelizePart(part: BasePart, config: ShatterConfig, or
 		else function()
 			return "Partial"
 		end
-	local cells = Voxelize.computeCells(job.Grid, classify)
+	local cells = Voxelize.computeCells(job.Grid, classify, job.GreedyMeshing)
 	return self:_emitCells(part, config, origin, cells)
 end
 
@@ -333,7 +391,7 @@ function VoxelController:_voxelizeBatch(parts: { BasePart }, config: ShatterConf
 	if #parts == 0 then
 		return { Whole = {}, Partial = {}, Extra = {} }
 	end
-	if self.Type ~= Enums.ControllerType.Relative or #parts == 1 then
+	if self.Type ~= Enums.ControllerType.Relative or #parts == 1 or not Config.Multithreading then
 		local combined: { [string]: { VoxelModule.Voxel } } = { Whole = {}, Partial = {}, Extra = {} }
 		for _, part in parts do
 			local produced = self:_voxelizePart(part, config, origin, hitbox)
@@ -358,30 +416,51 @@ function VoxelController:_voxelizeBatch(parts: { BasePart }, config: ShatterConf
 	return combined
 end
 
-function VoxelController:_runShatter(target: Instance, config: ShatterConfig, pending: PendingResult.PendingResult)
-	local candidates = self:_resolveCandidateParts(target)
+-- Splits `overlapping` into Whole (fully contained, HitboxType.Whole only) vs toSlice, then
+-- voxelizes toSlice. Shared by both the Target/Host path (overlapping comes from _queryHitbox,
+-- narrowed to the target's own descendants) and the unmounted path (overlapping comes from
+-- _queryWorkspace, narrowed only by hitbox.Scope) below.
+function VoxelController:_classifyAndSlice(overlapping: { BasePart }, hitbox: HitboxConfig, config: ShatterConfig, origin: Vector3): ({ VoxelModule.Voxel }, { [string]: { VoxelModule.Voxel } })
+	local hitboxType = hitbox.HitboxType or Enums.HitboxType.Partial
+	local whole: { VoxelModule.Voxel } = {}
+	local toSlice: { BasePart } = {}
+	for _, part in overlapping do
+		if hitboxType == Enums.HitboxType.Whole and self:_isFullyContained(part, hitbox) then
+			table.insert(whole, Voxel(part, Enums.HitboxType.Whole, self, origin))
+		else
+			table.insert(toSlice, part)
+		end
+	end
+	local produced = self:_voxelizeBatch(toSlice, config, origin, hitbox)
+	return whole, produced
+end
+
+function VoxelController:_runShatter(target: Instance?, config: ShatterConfig, pending: PendingResult.PendingResult)
 	local buckets: { Whole: { VoxelModule.Voxel }, Partial: { VoxelModule.Voxel }, Extra: { VoxelModule.Voxel } } =
 		{ Whole = {}, Partial = {}, Extra = {} }
 	local hitbox = config.Hitbox
 
-	if not hitbox then
+	if not target then
+		-- Indiscriminate destruction: no Target/Host means the hitbox itself is the only scope,
+		-- queried directly against the engine (see _queryWorkspace) instead of against a
+		-- specific instance's descendants.
+		assert(hitbox, "Shatter() with no Target and no Host requires a Hitbox (indiscriminate destruction)")
+		local cframe = hitbox.CFrame or CFrame.new()
+		local overlapping = self:_queryWorkspace(hitbox)
+		local whole, produced = self:_classifyAndSlice(overlapping, hitbox, config, cframe.Position)
+		table.move(whole, 1, #whole, #buckets.Whole + 1, buckets.Whole)
+		table.move(produced.Partial, 1, #produced.Partial, #buckets.Partial + 1, buckets.Partial)
+		table.move(produced.Extra, 1, #produced.Extra, #buckets.Extra + 1, buckets.Extra)
+	elseif not hitbox then
+		local candidates = self:_resolveCandidateParts(target)
 		local produced = self:_voxelizeBatch(candidates, config, nil, nil)
 		table.move(produced.Partial, 1, #produced.Partial, #buckets.Partial + 1, buckets.Partial)
 	else
+		local candidates = self:_resolveCandidateParts(target)
 		local cframe = hitbox.CFrame or CFrame.new()
-		local hitboxType = hitbox.HitboxType or Enums.HitboxType.Partial
 		local overlapping = self:_queryHitbox(hitbox, candidates)
-
-		local toSlice: { BasePart } = {}
-		for _, part in overlapping do
-			if hitboxType == Enums.HitboxType.Whole and self:_isFullyContained(part, hitbox) then
-				table.insert(buckets.Whole, Voxel(part, Enums.HitboxType.Whole, self))
-			else
-				table.insert(toSlice, part)
-			end
-		end
-
-		local produced = self:_voxelizeBatch(toSlice, config, cframe.Position, hitbox)
+		local whole, produced = self:_classifyAndSlice(overlapping, hitbox, config, cframe.Position)
+		table.move(whole, 1, #whole, #buckets.Whole + 1, buckets.Whole)
 		table.move(produced.Partial, 1, #produced.Partial, #buckets.Partial + 1, buckets.Partial)
 		table.move(produced.Extra, 1, #produced.Extra, #buckets.Extra + 1, buckets.Extra)
 	end
@@ -397,8 +476,9 @@ function VoxelController:_runShatter(target: Instance, config: ShatterConfig, pe
 	-- is the untouched remainder of the target (just reconstructed as fewer, greedy-meshed
 	-- parts) and is left in the world; callers that want it gone can :Cleanup() it themselves
 	-- off Result.Voxels.Extra.
-	local cleanupMethod = config.Cleanup
+	local cleanupMethod = config.Cleanup and config.Cleanup.Method
 	if cleanupMethod then
+		local delay = config.Cleanup and config.Cleanup.Delay
 		local pendingDestroy = 0
 		local function track(voxel)
 			pendingDestroy += 1
@@ -413,7 +493,7 @@ function VoxelController:_runShatter(target: Instance, config: ShatterConfig, pe
 			track(voxel)
 		end
 		for _, voxel in buckets.Partial do
-			voxel:Cleanup(cleanupMethod, config.CleanupDuration)
+			voxel:Cleanup(cleanupMethod, delay)
 		end
 	end
 
@@ -430,15 +510,24 @@ end
 	`Shatter(Config)` when the controller has a [Host], Target is implied. `Shatter(Target, Config)`
 	otherwise. `Hitbox` is optional in either form - omit it to shatter the whole Target/Host
 	directly with no detection step.
+
+	A third form: `Shatter(Config)` with **no Host and a `Hitbox`** runs indiscriminate
+	destruction - there's no single Target, so the hitbox queries `hitbox.Scope` (default the
+	whole `workspace`) directly and shatters whatever it finds, regardless of which part it came
+	from. `Result.Instance` is `nil` for this form, since no one Target/Host exists.
 ]=]
 function VoxelController:Shatter(a: Instance | ShatterConfig, b: ShatterConfig?): PendingResult.PendingResult
-	local target: Instance
+	local target: Instance?
 	local config: ShatterConfig
 
 	if typeof(a) == "table" then
-		assert(self.Host, "Shatter() with no Target requires the controller to have a Host")
-		target = self.Host
 		config = a :: ShatterConfig
+		if self.Host then
+			target = self.Host
+		else
+			assert(config.Hitbox, "Shatter() with no Target and no Host requires a Hitbox (indiscriminate destruction)")
+			target = nil
+		end
 	else
 		target = a :: Instance
 		config = b or {}

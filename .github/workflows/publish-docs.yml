@@ -29,6 +29,7 @@ jobs:
           moonwave build --publish \
             --code src/init.luau \
             --code src/VoxelController \
-            --code src/Enums
+            --code src/Enums \
+            --code src/Config.luau
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

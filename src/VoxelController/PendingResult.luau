@@ -16,7 +16,7 @@ export type Voxel = VoxelModule.Voxel
 	@interface Result
 	@within PendingResult
 	.Voxels {Whole: {Voxel}, Partial: {Voxel}, Extra: {Voxel}} -- every produced [Voxel], split three ways. `Whole`: isolated but never sliced (HitboxType.Whole only). `Partial`: the actual debris - sliced, and the only bucket Cleanup ever runs against. `Extra`: produced but outside the hitbox - greedy-meshed into a handful of boxes and left alone unless you Cleanup it yourself.
-	.Instance Instance? -- the Target/Host this Shatter call ran against.
+	.Instance Instance? -- the Target/Host this Shatter call ran against. `nil` for indiscriminate destruction (no Target, no Host - just a Hitbox).
 	.CollisionPoint Vector3? -- reserved for a future raycast-driven Shatter helper; not populated today.
 	.SurfaceNormal Vector3? -- reserved for a future raycast-driven Shatter helper; not populated today.
 ]=]

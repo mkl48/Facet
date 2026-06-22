@@ -53,6 +53,16 @@ local function resolveRelativeSize(part: BasePart, recommended: number, minimum:
 	return math.max(minimum, smallestDimension)
 end
 
+-- Produced voxels never keep a part's exact Material - plain Plastic in particular reads as
+-- rough/blocky once it's chopped into many small cubes, so it's smoothed to SmoothPlastic.
+-- Every other Material is left alone (Wood, Metal, etc. should still look like themselves).
+local function voxelMaterial(material: Enum.Material): Enum.Material
+	if material == Enum.Material.Plastic then
+		return Enum.Material.SmoothPlastic
+	end
+	return material
+end
+
 -- Lays out the grid of cells `part` will be sliced into at `voxelSize`, without producing any
 -- voxels yet - callers classify cells against this grid before deciding what to merge/emit.
 local function buildGrid(part: BasePart, voxelSize: number): Grid
@@ -70,7 +80,7 @@ local function buildGrid(part: BasePart, voxelSize: number): Grid
 		StepZ = size.Z / countZ,
 		Origin = part.CFrame * CFrame.new(-size.X / 2, -size.Y / 2, -size.Z / 2),
 		Color = part.Color,
-		Material = part.Material,
+		Material = voxelMaterial(part.Material),
 	}
 end
 
@@ -267,15 +277,21 @@ end
 -- the fewest boxes that cover it, and emit every other cell as its own piece. This is what
 -- VoxelController._voxelizePart turns into real Instances - either inline on the calling
 -- thread, or via VoxelController/Workers on a desynchronized Actor, since this function itself
--- never touches an Instance.
-local function computeCells(grid: Grid, classify: (Vector3) -> string?): { MergedVoxel }
+-- never touches an Instance. `greedyMeshing` (defaults true) is Config.GreedyMeshing, threaded
+-- through as a plain argument rather than read from Config directly so this stays callable from
+-- a desynchronized Actor with no shared state - pass `false` to emit one part per cell instead
+-- of merging "Extra" cells into boxes.
+local function computeCells(grid: Grid, classify: (Vector3) -> string?, greedyMeshing: boolean?): { MergedVoxel }
+	local mesh = if greedyMeshing == nil then true else greedyMeshing
 	local out: { MergedVoxel } = {}
 
-	local merged = greedyMesh(grid, function(pos)
-		return if classify(pos) == "Extra" then "Extra" else nil
-	end)
-	for _, data in merged do
-		table.insert(out, data)
+	if mesh then
+		local merged = greedyMesh(grid, function(pos)
+			return if classify(pos) == "Extra" then "Extra" else nil
+		end)
+		for _, data in merged do
+			table.insert(out, data)
+		end
 	end
 
 	for x = 0, grid.CountX - 1 do
@@ -283,7 +299,7 @@ local function computeCells(grid: Grid, classify: (Vector3) -> string?): { Merge
 			for z = 0, grid.CountZ - 1 do
 				local pos = cellPosition(grid, x, y, z)
 				local kind = classify(pos) or "Partial"
-				if kind ~= "Extra" then
+				if kind ~= "Extra" or not mesh then
 					table.insert(out, {
 						CFrame = grid.Origin * CFrame.new((x + 0.5) * grid.StepX, (y + 0.5) * grid.StepY, (z + 0.5) * grid.StepZ),
 						Size = Vector3.new(grid.StepX, grid.StepY, grid.StepZ),

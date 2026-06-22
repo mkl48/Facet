@@ -41,6 +41,10 @@ destroy, or your own function), and a `Result` you can chain off of with `:Next(
 - **One verb, fully configurable** - `Controller:Shatter(Target?, Config)`. Omit `Hitbox`
   entirely to shatter the whole target; include it to scope detection, with `HitboxType`
   (`Whole` returns a part untouched, `Partial` voxelizes whatever's detected).
+- **Indiscriminate destruction** - call `Controller:Shatter(Config)` with **no `Host` and no
+  Target** - just a `Hitbox` - and it shatters whatever overlaps that region anywhere in the
+  world (or `Hitbox.Scope`, if you want to restrict the search), with no single Target tying the
+  call to one part.
 - **Greedy meshing** - voxel cells produced outside the hitbox (`Result.Voxels.Extra`) are
   merged dimension-by-dimension into the fewest boxes that cover them, instead of one part per
   grid cell. Cells you're meant to see fragment (`Partial`, or a no-hitbox `Shatter`) stay one
@@ -57,10 +61,22 @@ destroy, or your own function), and a `Result` you can chain off of with `:Next(
 - **Three-way result split** - `Result.Voxels.Whole` / `.Partial` / `.Extra`, so you always
   know what was isolated whole, what got sliced, and what was produced but fell outside the
   hitbox.
-- **Composable cleanup** - `Enums.Cleanup.Rebuild` / `Fade` / `Destroy`, or pass your own
-  `function(voxel) ... end`.
+- **Composable cleanup** - `Cleanup = { Method = Enums.Cleanup.Rebuild / Fade / Destroy, Delay = number? }`,
+  or pass your own `{ Method = function(voxel) ... end }`.
+- **Eight Effects** - `Explode`, `Anchored`, `Unstable` (real structural collapse - unanchors
+  everything a Shatter call produced, including `Extra`, so removing a building's support
+  actually makes it fall), `Slice` (splits debris either side of a plane apart), `Blackhole` /
+  `Whitehole` (pull toward / launch away from a point), `Scatter`, and `Shrink` - see
+  [docs/effects](https://mkl48.github.io/Facet/effects).
+- **Richer voxels** - every produced `Voxel` carries `OriginalPosition`/`OriginalOrientation`
+  (captured before any Effect moved it) and `Distance` from the Shatter origin, alongside
+  `Instance`/`Kind`/`OriginalCFrame`.
+- **Smoothed material** - plain `Plastic` voxels come out `SmoothPlastic` (it reads better once
+  chopped into many small cubes); every other Material is left as-is.
 - **Two runtime modes** - `Instant` controllers run every `Shatter` call immediately;
   `Timeline` controllers queue calls until you call `Controller:Start()`.
+- **Global feature flags** - `Facet.Configure({ ObjectPooling, Multithreading, GreedyMeshing })`
+  turns any of the three on/off process-wide, no per-controller wiring needed.
 - **Two ways to install** - Wally for a Rojo workflow, or a single paste-into-the-command-bar
   installer with no toolchain at all.
 
@@ -118,8 +134,9 @@ Wall:Shatter({
     },
     Effects = {
         [Enums.Effects.Explode] = { Radius = 12 },
+        [Enums.Effects.Anchored] = false, -- Explode alone doesn't unanchor - see Effects below
     },
-    Cleanup = Enums.Cleanup.Fade,
+    Cleanup = { Method = Enums.Cleanup.Fade, Delay = 1.2 },
 }):Next(Enums.Event.NewVoxel):Then(function(result)
     print(#result.Voxels.Partial, "voxels produced")
 end)
@@ -171,15 +188,43 @@ Wall:Shatter({
         [Enums.Effects.Explode] = { Radius = 12 },
         [Enums.Effects.Anchored] = false,
     },
-    Cleanup = Enums.Cleanup.Fade,
-    CleanupDuration = 1.2,
+    Cleanup = { Method = Enums.Cleanup.Fade, Delay = 1.2 },
 })
 ```
+
+See [docs/effects](https://mkl48.github.io/Facet/effects) for the full Effects reference -
+`Explode`, `Anchored`, `Unstable` (real structural collapse - unanchors everything produced,
+including `Extra`, so a building actually falls once you cut its support out), `Slice`
+(splits debris either side of a plane apart), `Blackhole`/`Whitehole` (pull toward/launch away
+from a point), and `Scatter`/`Shrink`.
 
 Omit `Hitbox` entirely and the whole target gets voxelized with no detection step. Every
 produced part lands under `workspace._Bin.Voxels.<TargetName>` - grouped in a `Model` named
 after the part it came from - instead of back into wherever the original part lived, so debris
 never pollutes the rest of your place hierarchy.
+
+### Indiscriminate destruction (no Target)
+
+Skip `Host` and the `Target` argument entirely and `Shatter` runs against the `Hitbox` itself -
+whatever overlaps that region gets shattered, regardless of which part it came from:
+
+```lua
+local Demolition = Facet.Define({ Type = Enums.ControllerType.Relative, RecommendedVoxelSize = 1 })
+
+Demolition:Shatter({
+    Hitbox = {
+        Size = Vector3.new(24, 24, 24),
+        CFrame = explosionCFrame,
+        QueryType = Enums.QueryType.Sphere,
+        Scope = workspace.City, -- optional - defaults to the whole workspace
+    },
+    Cleanup = { Method = Enums.Cleanup.Destroy },
+})
+```
+
+A `Hitbox` is required here - there's no Target to fall back to detecting against. `Scope`
+restricts the search to one instance's descendants; omit it to scan the whole `workspace`.
+`Result.Instance` is `nil` for this form, since no single Target/Host exists.
 
 ### Reading the Result
 
@@ -204,7 +249,9 @@ Wall:Shatter(config)
 | `Instance` | `Instance?` | always - the `Target`/`Host` this call ran against |
 
 Each entry in every bucket is a [`Voxel`](https://mkl48.github.io/Facet/api/Voxel), not a bare
-`BasePart` - it wraps the produced part with `:Cleanup(method, duration?)` (run the same
+`BasePart` - alongside `Instance` and `Kind`, it carries `OriginalCFrame`/`OriginalPosition`/
+`OriginalOrientation` (captured the instant it was created, before any Effect moved it) and
+`Distance` (from the Shatter origin), plus `:Cleanup(method, duration?)` (run the same
 Rebuild/Fade/Destroy/custom logic against just that one part) and, on `Whole` voxels only,
 `:Shatter(config?)` to re-shatter that exact part with no hitbox needed.
 
@@ -212,9 +259,12 @@ Rebuild/Fade/Destroy/custom logic against just that one part) and, on `Whole` vo
 
 ```lua
 Facet.Define(config: DefineConfig): VoxelController
+Facet.Configure(overrides: { ObjectPooling: boolean?, Multithreading: boolean?, GreedyMeshing: boolean? }): ()
 Facet.Enums: { ControllerType, RuntimeType, HitboxType, QueryType, Effects, Cleanup, Event }
 
 VoxelController:Shatter(target: Instance?, config: ShatterConfig): PendingResult
+-- target is also optional when config.Hitbox is set and the controller has no Host - see
+-- "Indiscriminate destruction" above.
 VoxelController:Start(): ()   -- flushes a Timeline controller's queue
 VoxelController:Destroy(): () -- clears anything still queued
 
