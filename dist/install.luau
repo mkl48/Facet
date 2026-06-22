@@ -751,22 +751,17 @@ function VoxelController:_emitCells(part: BasePart, config: ShatterConfig, origi
 	end
 
 	part:Destroy()
-
-	local chunkConfig = config.Effects and config.Effects[Enums.Effects.Chunk]
-	if chunkConfig then
-		self:_makeChunk(produced.Partial, produced.Extra, chunkConfig)
-	end
-
 	return produced
 end
 
--- Effects.Chunk: welds every voxel this one part produced into a single unanchored rigid
--- assembly (a star topology - every piece welded straight to the first piece, `root`) instead of
--- the per-voxel unanchor every other Effect does, so the remainder of a building falls as one
--- piece once its support is gone, rather than every tiny voxel tumbling apart on its own. A
--- weld breaks - detaching that piece and everything within BreakRadius of it - the moment its
--- relative impact speed reaches BreakSpeed, so a hard enough landing fractures the assembly into
--- smaller chunks instead of staying one rigid lump forever.
+-- Effects.Chunk: welds every voxel one whole Shatter call produced - across every candidate part
+-- the call touched, not just one - into a single unanchored rigid assembly (a star topology -
+-- every piece welded straight to the first piece, `root`) instead of the per-voxel unanchor
+-- every other Effect does, so the remainder of a multi-part target (e.g. a Model built from
+-- several Parts) falls and lands as one piece, rather than each original part's slice becoming
+-- its own disconnected chunk. A weld breaks - detaching that piece and everything within
+-- BreakRadius of it - the moment its relative impact speed reaches BreakSpeed, so a hard enough
+-- landing fractures the assembly into smaller chunks instead of staying one rigid lump forever.
 function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { VoxelModule.Voxel }, chunkConfig: any)
 	local settings = if type(chunkConfig) == "table" then chunkConfig else {}
 	local breakSpeed = settings.BreakSpeed or 40
@@ -932,6 +927,15 @@ function VoxelController:_runShatter(target: Instance?, config: ShatterConfig, p
 		table.move(whole, 1, #whole, #buckets.Whole + 1, buckets.Whole)
 		table.move(produced.Partial, 1, #produced.Partial, #buckets.Partial + 1, buckets.Partial)
 		table.move(produced.Extra, 1, #produced.Extra, #buckets.Extra + 1, buckets.Extra)
+	end
+
+	-- Welds the whole call's output together, across every candidate part it touched - has to
+	-- run after every part's voxels exist, not per-part, so a multi-part target (a Model built
+	-- from several Parts) collapses as one assembly instead of each part's slice becoming its
+	-- own disconnected chunk.
+	local chunkConfig = config.Effects and config.Effects[Enums.Effects.Chunk]
+	if chunkConfig then
+		self:_makeChunk(buckets.Partial, buckets.Extra, chunkConfig)
 	end
 
 	local result = {
