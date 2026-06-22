@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[41],{84410:e=>{e.exports=JSON.parse('{"sourceUrl":"https://github.com/mkl48/Facet/blob/master","baseUrl":"/Facet/","classOrder":["Facet","VoxelController","Voxel","PendingResult","Workers","Thread","Config","Enums"],"apiCategories":[]}')}}]);

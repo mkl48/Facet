@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Effects | Facet</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://mkl48.github.io/Facet/docs/effects"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Effects | Facet"><meta data-rh="true" name="description" content="ShatterConfig.Effects is a table keyed by Enums.Effects, applied to every voxel Shatter"><meta data-rh="true" property="og:description" content="ShatterConfig.Effects is a table keyed by Enums.Effects, applied to every voxel Shatter"><link data-rh="true" rel="icon" href="/Facet/favicon.png"><link data-rh="true" rel="canonical" href="https://mkl48.github.io/Facet/docs/effects"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/docs/effects" hreflang="en"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/docs/effects" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Effects","item":"https://mkl48.github.io/Facet/docs/effects"}]}</script><link rel="stylesheet" href="/Facet/assets/css/styles.ae967cf2.css">
-<script src="/Facet/assets/js/runtime~main.373ae59b.js" defer="defer"></script>
-<script src="/Facet/assets/js/main.787c1602.js" defer="defer"></script>
+<script src="/Facet/assets/js/runtime~main.5657a58b.js" defer="defer"></script>
+<script src="/Facet/assets/js/main.11f19c4b.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -52,14 +52,13 @@ fracture further.</p>
 <p>Combine it with <code>Explode</code>/<code>Slice</code> for a more dramatic initial kick before gravity takes over -
 just expect the welded pieces to settle into one shared velocity almost immediately, since
 they&#x27;re rigidly connected.</p>
-<p>Every Chunk piece is also put into a shared <code>CollisionGroup</code> (&quot;Facet_Chunk&quot;) that&#x27;s non-collidable
-with itself - the voxel grid produces pieces that touch exactly at shared faces, and without this,
-the physics engine treats that contact as an overlap and fires a separating impulse the instant
-the weld is created, which spikes velocity past <code>BreakSpeed</code> (no matter how high you set it) and
-shatters the assembly before it ever falls. Impact detection still works because that&#x27;s driven by
-<code>Touched</code> (which only needs <code>CanTouch</code>, not collision) against whatever the assembly actually
-lands on - which stays in the normal <code>Default</code> group, so it still collides with and triggers
-<code>Touched</code> on the falling assembly.</p>
+<p>Chunk pieces keep colliding with each other - nothing turns that off. A <code>Touched</code> against another
+piece from the <em>same</em> assembly never counts toward <code>BreakSpeed</code>, only a <code>Touched</code> against
+something outside it does, so an assembly resting against its own geometry (which is constant,
+since the voxel grid is wall-to-wall touching pieces) never reads as a hit. The first half-second
+after a Chunk assembly is created is also ignored entirely, so the physics engine settling the
+freshly welded geometry into place can&#x27;t be mistaken for an impact either - between those two,
+<code>BreakSpeed</code> only ever fires from a genuine outside collision.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="slice---normal-vector3-speed-number-"><code>Slice = { Normal: Vector3?, Speed: number? }</code><a href="#slice---normal-vector3-speed-number-" class="hash-link" aria-label="Direct link to slice---normal-vector3-speed-number-" title="Direct link to slice---normal-vector3-speed-number-" translate="no">​</a></h3>
 <p>Splits voxels into two groups by which side of a plane (through the Shatter origin, facing
 <code>Normal</code>, default <code>Vector3.new(0, 1, 0)</code>) they landed on, then pushes each group apart along

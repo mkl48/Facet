@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Facet</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://mkl48.github.io/Facet/"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docusaurus_tag" content="default"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docsearch:docusaurus_tag" content="default"><meta data-rh="true" property="og:title" content="Facet"><link data-rh="true" rel="icon" href="/Facet/favicon.png"><link data-rh="true" rel="canonical" href="https://mkl48.github.io/Facet/"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/" hreflang="en"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/" hreflang="x-default"><script data-rh="true">function insertBanner(){var n=document.createElement("div");n.id="__docusaurus-base-url-issue-banner-container";n.innerHTML='\n<div id="__docusaurus-base-url-issue-banner" style="border: thick solid red; background-color: rgb(255, 230, 179); margin: 20px; padding: 20px; font-size: 20px;">\n   <p style="font-weight: bold; font-size: 30px;">Your Docusaurus site did not load properly.</p>\n   <p>A very common reason is a wrong site <a href="https://docusaurus.io/docs/docusaurus.config.js/#baseUrl" style="font-weight: bold;">baseUrl configuration</a>.</p>\n   <p>Current configured baseUrl = <span style="font-weight: bold; color: red;">/Facet/</span> </p>\n   <p>We suggest trying baseUrl = <span id="__docusaurus-base-url-issue-banner-suggestion-container" style="font-weight: bold; color: green;"></span></p>\n</div>\n',document.body.prepend(n);var e=document.getElementById("__docusaurus-base-url-issue-banner-suggestion-container"),s=window.location.pathname,o="/"===s.substr(-1)?s:s+"/";e.innerHTML=o}document.addEventListener("DOMContentLoaded",(function(){void 0===window.docusaurus&&insertBanner()}))</script><link rel="stylesheet" href="/Facet/assets/css/styles.ae967cf2.css">
-<script src="/Facet/assets/js/runtime~main.373ae59b.js" defer="defer"></script>
-<script src="/Facet/assets/js/main.787c1602.js" defer="defer"></script>
+<script src="/Facet/assets/js/runtime~main.5657a58b.js" defer="defer"></script>
+<script src="/Facet/assets/js/main.11f19c4b.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -24,7 +24,7 @@ destroy, or your own function), and a <code>Result</code> you can chain off of w
 over the candidate parts, and Actor-based multithreading for Relative controllers. All four
 <code>QueryType</code>s are wired up (<code>Box</code>/<code>Sphere</code>/<code>Region</code> through the octree + an exact shape test,
 <code>Raycast</code> straight through the engine - single closest hit, no multi-hit walk yet). The Actor
-pool (see <a href="src/VoxelController/Workers"><code>src/VoxelController/Workers</code></a>) is built against the
+pool (see <a href="src/_Classes/VoxelController/Workers"><code>src/_Classes/VoxelController/Workers</code></a>) is built against the
 documented <code>Actor</code>/<code>SendMessage</code>/<code>BindToMessageParallel</code> APIs but hasn&#x27;t been run against a
 real Studio session yet - it falls back to single-threaded voxelization automatically if the
 pool fails to start, so a surprise there costs speed, not correctness, but treat it as
@@ -46,11 +46,11 @@ merged dimension-by-dimension into the fewest boxes that cover them, instead of 
 grid cell. Cells you&#x27;re meant to see fragment (<code>Partial</code>, or a no-hitbox <code>Shatter</code>) stay one
 piece per cell.</li>
 <li><strong>Octree-backed spatial queries</strong> - candidate parts are indexed in a broad-phase octree
-(<code>src/VoxelController/Octree.luau</code>) before the exact shape test runs, so detection doesn&#x27;t
+(<code>src/_Patterns/Octree.luau</code>) before the exact shape test runs, so detection doesn&#x27;t
 depend on <code>CanQuery</code>/<code>CanCollide</code> or the part living in <code>workspace</code>.</li>
 <li><strong>Multithreaded slicing for Relative controllers</strong> - when a <code>Shatter</code> call touches more than
 one part, each part&#x27;s grid classification + greedy meshing runs on its own desynchronized
-Actor (<code>src/VoxelController/Workers</code>) instead of serially on the calling thread. <code>Absolute</code>
+Actor (<code>src/_Classes/VoxelController/Workers</code>) instead of serially on the calling thread. <code>Absolute</code>
 controllers, and any call that only touches one part, skip the Actor round-trip entirely.</li>
 <li><strong>Four query types</strong> - <code>Enums.QueryType.Box</code> / <code>Sphere</code> / <code>Region</code> / <code>Raycast</code>, set on
 <code>Hitbox.QueryType</code>.</li>
