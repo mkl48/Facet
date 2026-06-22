@@ -415,6 +415,28 @@ local Config = ConfigModule.Config
 local Voxel = VoxelModule.new
 local applyEffects = VoxelModule.applyEffects
 
+-- Every Chunk assembly's pieces share this one CollisionGroup, set non-collidable with itself.
+-- The voxel grid produces pieces that touch exactly at shared faces - without this, the moment
+-- they're unanchored and welded together, the physics solver treats that contact as an overlap
+-- and fires a separating impulse, which spikes AssemblyLinearVelocity past any BreakSpeed
+-- threshold (no matter how high) before gravity ever gets a chance to make the assembly fall as
+-- one piece. Registered once and reused for every Chunk call, not per-call - one of the engine's
+-- 32 collision group slots, permanently. CanTouch stays true (set in _emitCells) so impact
+-- detection against the world (still in the normal `Default` group) keeps working.
+local CHUNK_COLLISION_GROUP = "Facet_Chunk"
+local chunkCollisionGroupReady = false
+local function ensureChunkCollisionGroup()
+	if chunkCollisionGroupReady then
+		return
+	end
+	local PhysicsService = game:GetService("PhysicsService")
+	if not PhysicsService:IsCollisionGroupRegistered(CHUNK_COLLISION_GROUP) then
+		PhysicsService:RegisterCollisionGroup(CHUNK_COLLISION_GROUP)
+	end
+	PhysicsService:CollisionGroupSetCollidable(CHUNK_COLLISION_GROUP, CHUNK_COLLISION_GROUP, false)
+	chunkCollisionGroupReady = true
+end
+
 -- Every voxel produced from slicing a part lands under workspace._Bin.Voxels.<PartName>,
 -- grouped by the original part's Name, instead of back into wherever the part used to live -
 -- keeps debris out of the place hierarchy the rest of the game depends on, and keeps every
@@ -774,8 +796,10 @@ function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { Vox
 	for _, voxel in extra do
 		table.insert(pieces, voxel.Instance)
 	end
+	ensureChunkCollisionGroup()
 	for _, piece in pieces do
 		piece.Anchored = false
+		piece.CollisionGroup = CHUNK_COLLISION_GROUP
 	end
 	if #pieces < 2 then
 		return
