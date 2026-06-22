@@ -420,6 +420,10 @@ function VoxelController:_runShatter(target: Instance, config: ShatterConfig, pe
 
 	pending:_fire(Enums.Event.NewVoxel, result)
 
+	-- Cleanup only ever runs on Partial - that's the debris Shatter exists to produce. Extra
+	-- is the untouched remainder of the target (just reconstructed as fewer, greedy-meshed
+	-- parts) and is left in the world; callers that want it gone can :Cleanup() it themselves
+	-- off Result.Voxels.Extra.
 	local cleanupMethod = config.Cleanup
 	if cleanupMethod then
 		local pendingDestroy = 0
@@ -435,13 +439,7 @@ function VoxelController:_runShatter(target: Instance, config: ShatterConfig, pe
 		for _, voxel in buckets.Partial do
 			track(voxel)
 		end
-		for _, voxel in buckets.Extra do
-			track(voxel)
-		end
 		for _, voxel in buckets.Partial do
-			voxel:Cleanup(cleanupMethod)
-		end
-		for _, voxel in buckets.Extra do
 			voxel:Cleanup(cleanupMethod)
 		end
 	end
