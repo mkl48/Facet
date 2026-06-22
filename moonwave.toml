@@ -1,0 +1,48 @@
+title = "Facet"
+gitRepoUrl = "https://github.com/mkl48/Facet"
+gitSourceBranch = "master"
+changelog = true
+# order the API sidebar: the entry point first, then the controller, then the supporting pieces
+classOrder = [
+    "Facet",
+    "VoxelController",
+    "Enums",
+]
+[docusaurus]
+onBrokenLinks = "warn"
+onBrokenMarkdownLinks = "warn"
+onBrokenAnchors = "warn"
+organizationName = "mkl48"
+projectName = "Facet"
+url = "https://mkl48.github.io"
+baseUrl = "/Facet/"
+tagline = "a comprehensive voxel destruction library for Roblox"
+favicon = "favicon.png"
+
+[navbar.logo]
+alt = "Facet"
+src = "logo.png"
+
+[home]
+enabled = true
+includeReadme = true
+
+[[home.features]]
+title = "Greedy meshing"
+description = "adjacent same-type voxels merge into larger quads instead of one part per cube"
+
+[[home.features]]
+title = "Octree spatial partitioning"
+description = "fast neighbor lookups, LOD, and culling without scanning the whole chunk"
+
+[[home.features]]
+title = "Multithreaded voxelization"
+description = "Relative controllers split work across Actors and desynchronized workers"
+
+[[home.features]]
+title = "One verb: Shatter"
+description = "Hitbox, Effects, and Cleanup are all just config on the same call"
+
+[footer]
+style = "dark"
+copyright = "Copyright © 2026 mkl48. Built with Moonwave."

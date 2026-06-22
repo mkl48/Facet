@@ -1,0 +1,16 @@
+{
+	"name": "Facet (dev place)",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"Facet": {
+				"$path": "src"
+			}
+		},
+		"ServerScriptService": {
+			"FacetServer": {
+				"$path": "examples/server.server.luau"
+			}
+		}
+	}
+}

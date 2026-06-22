@@ -1,0 +1,10 @@
+[package]
+name = "kr3ative/facet"
+version = "0.1.0"
+description = "A comprehensive voxel destruction library for Roblox - greedy meshing, octrees, and a full optimization stack"
+license = "MIT"
+authors = ["kr3ative"]
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+
+[dependencies]
