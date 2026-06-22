@@ -46,6 +46,7 @@ Facet.Enums = Enums
 export type DefineConfig = VoxelController.DefineConfig
 export type ShatterConfig = VoxelController.ShatterConfig
 export type HitboxConfig = VoxelController.HitboxConfig
+export type VoxelController = VoxelController.VoxelController
 
 --[=[
 	@within Facet
@@ -54,7 +55,7 @@ export type HitboxConfig = VoxelController.HitboxConfig
 	(fixed VoxelSize). Pass `Host` to scope every Shatter call on the controller to one
 	instance without naming a Target each time.
 ]=]
-function Facet.Define(config: DefineConfig)
+function Facet.Define(config: DefineConfig): VoxelController
 	return VoxelController.new(config)
 end
 
@@ -148,6 +149,35 @@ local Octree = require(script.Octree)
 local Voxel = VoxelModule.new
 local applyEffects = VoxelModule.applyEffects
 
+-- Every voxel produced from slicing a part lands under workspace._Bin.Voxels.<PartName>,
+-- grouped by the original part's Name, instead of back into wherever the part used to live -
+-- keeps debris out of the place hierarchy the rest of the game depends on, and keeps every
+-- hit on the same part collected in one Model across calls.
+local function voxelGroupFor(name: string): Model
+	local bin = workspace:FindFirstChild("_Bin")
+	if not bin then
+		bin = Instance.new("Folder")
+		bin.Name = "_Bin"
+		bin.Parent = workspace
+	end
+
+	local voxels = bin:FindFirstChild("Voxels")
+	if not voxels then
+		voxels = Instance.new("Folder")
+		voxels.Name = "Voxels"
+		voxels.Parent = bin
+	end
+
+	local group = voxels:FindFirstChild(name)
+	if not group or not group:IsA("Model") then
+		group = Instance.new("Model")
+		group.Name = name
+		group.Parent = voxels
+	end
+
+	return group :: Model
+end
+
 export type HitboxConfig = {
 	Size: Vector3?,
 	CFrame: CFrame?,
@@ -175,10 +205,26 @@ export type DefineConfig = {
 	VoxelSize: number?,
 }
 
+-- The actual instance Facet.Define()/VoxelController.new() hands back. Typed explicitly (and
+-- returned through this type, not `any`) so callers get real Intellisense on `:Shatter()`,
+-- `:Start()`, `:Destroy()`, and the controller's own fields instead of `any`.
+export type VoxelController = {
+	Type: Enums.ControllerType,
+	RuntimeType: Enums.RuntimeType,
+	Host: Instance?,
+	Drivers: { VoxelizationMethod: string? }?,
+	MinimumVoxelSize: number?,
+	RecommendedVoxelSize: number?,
+	VoxelSize: number?,
+	Shatter: (self: VoxelController, a: Instance | ShatterConfig, b: ShatterConfig?) -> PendingResult.PendingResult,
+	Start: (self: VoxelController) -> (),
+	Destroy: (self: VoxelController) -> (),
+}
+
 local VoxelController = {}
 VoxelController.__index = VoxelController
 
-function VoxelController.new(config: DefineConfig)
+function VoxelController.new(config: DefineConfig): VoxelController
 	assert(config.Type == Enums.ControllerType.Relative or config.Type == Enums.ControllerType.Absolute, "Define requires Type to be Enums.ControllerType.Relative or .Absolute")
 
 	local self = setmetatable({
@@ -200,7 +246,7 @@ function VoxelController.new(config: DefineConfig)
 		self.VoxelSize = config.VoxelSize
 	end
 
-	return (self :: any)
+	return (self :: any) :: VoxelController
 end
 
 function VoxelController:_voxelSizeFor(part: BasePart): number
@@ -344,7 +390,7 @@ function VoxelController:_voxelizePart(part: BasePart, config: ShatterConfig, or
 		return "Partial"
 	end
 
-	local parent = part.Parent
+	local parent = voxelGroupFor(part.Name)
 	local wasAnchored = part.Anchored
 	local produced: { [string]: { any } } = { Whole = {}, Partial = {}, Extra = {} }
 
