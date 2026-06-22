@@ -10,8 +10,8 @@ directly from game code."><meta data-rh="true" property="og:description" content
 of the public Shatter API - VoxelController calls `Workers.computeAsync` itself whenever a
 Relative controller&#x27;s Shatter call touches more than one part; nothing here needs calling
 directly from game code."><link data-rh="true" rel="icon" href="/Facet/favicon.png"><link data-rh="true" rel="canonical" href="https://mkl48.github.io/Facet/api/Workers"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/api/Workers" hreflang="en"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/api/Workers" hreflang="x-default"><link rel="stylesheet" href="/Facet/assets/css/styles.ae967cf2.css">
-<script src="/Facet/assets/js/runtime~main.44e949ca.js" defer="defer"></script>
-<script src="/Facet/assets/js/main.dc26941f.js" defer="defer"></script>
+<script src="/Facet/assets/js/runtime~main.4845735f.js" defer="defer"></script>
+<script src="/Facet/assets/js/main.d96214e2.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -24,7 +24,7 @@ directly from game code."><link data-rh="true" rel="icon" href="/Facet/favicon.p
   Relative controller's Shatter call touches more than one part; nothing here needs calling
   directly from game code.
 </p>
-</div></header><h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="functions">Functions<a href="#functions" class="hash-link" aria-label="Direct link to Functions" title="Direct link to Functions" translate="no">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="computeAsync"><code style="text-decoration:none">computeAsync</code><a href="#computeAsync" class="hash-link" aria-label="Direct link to computeAsync" title="Direct link to computeAsync" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/Workers/init.luau#L106"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>Workers<!-- -->.</code><code class="green_DgR4">computeAsync</code><code>(</code><code>jobs<!-- -->: </code><code class="purple_ieR2">{</code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/Facet/api/Workers#Job">Job</a></code><code class="purple_ieR2">}</code><code>) → </code><code class="purple_ieR2">{</code><code class="green_DgR4">{</code><code class="blue_P4bS">Voxelize.MergedVoxel</code><code class="green_DgR4">}</code><code class="purple_ieR2">}</code></div><h3>Types</h3><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="Job"><a href="#Job" class="hash-link" aria-label="Direct link to Job" title="Direct link to Job" translate="no">​</a></h3><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>Job<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>Grid<!-- -->: </code><code class="blue_P4bS">Grid</code><span class="inlineDescription_G7Er">-- <span>
+</div></header><h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="functions">Functions<a href="#functions" class="hash-link" aria-label="Direct link to Functions" title="Direct link to Functions" translate="no">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="computeAsync"><code style="text-decoration:none">computeAsync</code><a href="#computeAsync" class="hash-link" aria-label="Direct link to computeAsync" title="Direct link to computeAsync" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/Workers/init.luau#L139"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>Workers<!-- -->.</code><code class="green_DgR4">computeAsync</code><code>(</code><code>jobs<!-- -->: </code><code class="purple_ieR2">{</code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/Facet/api/Workers#Job">Job</a></code><code class="purple_ieR2">}</code><code>) → </code><code class="purple_ieR2">{</code><code class="green_DgR4">{</code><code class="blue_P4bS">Voxelize.MergedVoxel</code><code class="green_DgR4">}</code><code class="purple_ieR2">}</code></div><h3>Types</h3><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="Job"><a href="#Job" class="hash-link" aria-label="Direct link to Job" title="Direct link to Job" translate="no">​</a></h3><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>Job<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>Grid<!-- -->: </code><code class="blue_P4bS">Grid</code><span class="inlineDescription_G7Er">-- <span>
 <p>a part's already-built grid (Voxelize.buildGrid) - plain data, no Instance reference.</p>
 </span></span></div><div><code>Hitbox<!-- -->: </code><code class="blue_P4bS">PointHitbox?</code><span class="inlineDescription_G7Er">-- <span>
 <p>the classification hitbox, in the same Instance-free shape Voxelize.classifyPoint expects. nil means "no hitbox" - every cell classifies Partial.</p>
@@ -57,7 +57,7 @@ directly from game code."><link data-rh="true" rel="icon" href="/Facet/favicon.p
             ],
             &quot;function_type&quot;: &quot;static&quot;,
             &quot;source&quot;: {
-                &quot;line&quot;: 106,
+                &quot;line&quot;: 139,
                 &quot;path&quot;: &quot;src/VoxelController/Workers/init.luau&quot;
             }
         }
