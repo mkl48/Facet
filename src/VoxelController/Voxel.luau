@@ -21,7 +21,7 @@ export type Voxel = {
 	Instance: BasePart,
 	Kind: Kind,
 	OriginalCFrame: CFrame,
-	Cleanup: (self: Voxel, method: (Enums.Cleanup | ((Voxel) -> ())?)) -> (),
+	Cleanup: (self: Voxel, method: (Enums.Cleanup | ((Voxel) -> ())?), duration: number?) -> (),
 	Shatter: ((self: Voxel, config: ShatterSizeConfig?) -> any)?,
 }
 
@@ -67,7 +67,7 @@ function Voxel.new(instance: BasePart, kind: Kind, controller: any): Voxel
 	return (self :: any) :: Voxel
 end
 
-function Voxel:Cleanup(method)
+function Voxel:Cleanup(method, duration: number?)
 	method = method or self._controller._cleanup
 	if type(method) == "function" then
 		method(self)
@@ -77,14 +77,14 @@ function Voxel:Cleanup(method)
 	if method == Enums.Cleanup.Destroy then
 		self.Instance:Destroy()
 	elseif method == Enums.Cleanup.Fade then
-		local tween = TweenService:Create(self.Instance, TweenInfo.new(0.5), { Transparency = 1 })
+		local tween = TweenService:Create(self.Instance, TweenInfo.new(duration or 0.5), { Transparency = 1 })
 		tween.Completed:Once(function()
 			self.Instance:Destroy()
 		end)
 		tween:Play()
 	elseif method == Enums.Cleanup.Rebuild then
 		self.Instance.Anchored = true
-		local tween = TweenService:Create(self.Instance, TweenInfo.new(0.6), { CFrame = self.OriginalCFrame })
+		local tween = TweenService:Create(self.Instance, TweenInfo.new(duration or 0.6), { CFrame = self.OriginalCFrame })
 		tween:Play()
 	end
 end

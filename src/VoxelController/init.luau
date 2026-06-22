@@ -65,6 +65,9 @@ export type ShatterConfig = {
 	Hitbox: HitboxConfig?,
 	Effects: { [string]: any }?,
 	Cleanup: (Enums.Cleanup | ((any) -> ()))?,
+	-- Seconds the Cleanup tween takes (Fade/Rebuild only - Destroy is instant and ignores
+	-- this). Defaults to 0.5 for Fade, 0.6 for Rebuild when omitted.
+	CleanupDuration: number?,
 }
 
 export type DefineConfig = {
@@ -358,7 +361,7 @@ function VoxelController:_runShatter(target: Instance, config: ShatterConfig, pe
 			track(voxel)
 		end
 		for _, voxel in buckets.Partial do
-			voxel:Cleanup(cleanupMethod)
+			voxel:Cleanup(cleanupMethod, config.CleanupDuration)
 		end
 	end
 

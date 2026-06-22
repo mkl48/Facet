@@ -193,6 +193,9 @@ export type ShatterConfig = {
 	Hitbox: HitboxConfig?,
 	Effects: { [string]: any }?,
 	Cleanup: (Enums.Cleanup | ((any) -> ()))?,
+	-- Seconds the Cleanup tween takes (Fade/Rebuild only - Destroy is instant and ignores
+	-- this). Defaults to 0.5 for Fade, 0.6 for Rebuild when omitted.
+	CleanupDuration: number?,
 }
 
 export type DefineConfig = {
@@ -486,7 +489,7 @@ function VoxelController:_runShatter(target: Instance, config: ShatterConfig, pe
 			track(voxel)
 		end
 		for _, voxel in buckets.Partial do
-			voxel:Cleanup(cleanupMethod)
+			voxel:Cleanup(cleanupMethod, config.CleanupDuration)
 		end
 	end
 
@@ -753,7 +756,7 @@ export type Voxel = {
 	Instance: BasePart,
 	Kind: Kind,
 	OriginalCFrame: CFrame,
-	Cleanup: (self: Voxel, method: (Enums.Cleanup | ((Voxel) -> ())?)) -> (),
+	Cleanup: (self: Voxel, method: (Enums.Cleanup | ((Voxel) -> ())?), duration: number?) -> (),
 	Shatter: ((self: Voxel, config: ShatterSizeConfig?) -> any)?,
 }
 
@@ -799,7 +802,7 @@ function Voxel.new(instance: BasePart, kind: Kind, controller: any): Voxel
 	return (self :: any) :: Voxel
 end
 
-function Voxel:Cleanup(method)
+function Voxel:Cleanup(method, duration: number?)
 	method = method or self._controller._cleanup
 	if type(method) == "function" then
 		method(self)
@@ -809,14 +812,14 @@ function Voxel:Cleanup(method)
 	if method == Enums.Cleanup.Destroy then
 		self.Instance:Destroy()
 	elseif method == Enums.Cleanup.Fade then
-		local tween = TweenService:Create(self.Instance, TweenInfo.new(0.5), { Transparency = 1 })
+		local tween = TweenService:Create(self.Instance, TweenInfo.new(duration or 0.5), { Transparency = 1 })
 		tween.Completed:Once(function()
 			self.Instance:Destroy()
 		end)
 		tween:Play()
 	elseif method == Enums.Cleanup.Rebuild then
 		self.Instance.Anchored = true
-		local tween = TweenService:Create(self.Instance, TweenInfo.new(0.6), { CFrame = self.OriginalCFrame })
+		local tween = TweenService:Create(self.Instance, TweenInfo.new(duration or 0.6), { CFrame = self.OriginalCFrame })
 		tween:Play()
 	end
 end
