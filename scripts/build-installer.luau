@@ -9,11 +9,12 @@
 -- folder without an init.luau becomes a Folder. Source is embedded as a long-bracket string
 -- with a safe `=` level (see longString below), so it reads verbatim and takes no escapes.
 --
--- Script/LocalScript children are created Enabled = false: most of them (e.g. Workers' worker
--- templates) are only ever meant to run after being cloned into a purpose-built Actor at
--- runtime, not as-installed. Worker.server.luau specifically gets bundled twice - "Worker"
--- (RunContext = Server) and "WorkerClient" (RunContext = Client) - since RunContext can't be
--- set from a live game script later (Studio/Plugin-only capability); see Workers/init.luau.
+-- Script/LocalScript children are created Enabled = false: most of them (e.g. the Workers
+-- worker shells) are only ever meant to run after being cloned into a purpose-built Actor at
+-- runtime, not as-installed. WorkerServer.server.luau/WorkerClient.client.luau additionally get
+-- their RunContext baked here (Server/Client respectively, via RUN_CONTEXT_OVERRIDES below)
+-- since RunContext can't be set from a live game script later (Studio/Plugin-only capability);
+-- see _Classes/VoxelController/Workers/init.luau.
 
 local fs = require("@lune/fs")
 
@@ -107,6 +108,15 @@ local function childNameFor(entry: string): string
 	return name
 end
 
+-- RunContext can only be set on a Script/LocalScript from Studio/Plugin capability (the command
+-- bar counts), never at live game runtime - so the realm these worker shells need is baked once,
+-- here, at install time instead of being mutated later. See
+-- _Classes/VoxelController/Workers/init.luau for why two thin shells exist at all.
+local RUN_CONTEXT_OVERRIDES: { [string]: string } = {
+	WorkerServer = "Server",
+	WorkerClient = "Client",
+}
+
 -- Emit the creation of `dir` as a node parented to `parentVar`, then recurse. Returns the
 -- local variable name bound to the created instance (so children can parent to it).
 local function build(dir: string, parentVar: string, name: string): string
@@ -133,16 +143,13 @@ local function build(dir: string, parentVar: string, name: string): string
 			local className = classNameFor(entry)
 			if className == "ModuleScript" then
 				emit(`mod({q(childName)}, {var}, {longString(fs.readFile(path))})`)
-			elseif childName == "Worker" and entry == "Worker.server.luau" then
-				-- RunContext can only be set from Studio/Plugin capability (the command bar
-				-- counts), never at live game runtime - so bake both realm templates here
-				-- instead of leaving Workers/init.luau to mutate RunContext later.
-				local source = longString(fs.readFile(path))
-				emit(`inst({q(className)}, {q("Worker")}, {var}, {source}, "Server")`)
-				moduleCount += 1
-				emit(`inst({q(className)}, {q("WorkerClient")}, {var}, {source}, "Client")`)
 			else
-				emit(`inst({q(className)}, {q(childName)}, {var}, {longString(fs.readFile(path))})`)
+				local runContext = RUN_CONTEXT_OVERRIDES[childName]
+				if runContext then
+					emit(`inst({q(className)}, {q(childName)}, {var}, {longString(fs.readFile(path))}, {q(runContext)})`)
+				else
+					emit(`inst({q(className)}, {q(childName)}, {var}, {longString(fs.readFile(path))})`)
+				end
 			end
 		end
 	end

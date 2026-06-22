@@ -49,17 +49,17 @@ local _1 = mod("Facet", RS, [[
 -- (fixed voxel size) - and that controller's :Shatter() is the one verb everything else
 -- (Hitbox detection, Effects, Cleanup, Result chaining) hangs off of.
 --
--- See VoxelController/init.luau for the Shatter pipeline and Enums/init.luau for every
--- enum referenced in configs below.
+-- See _Classes/VoxelController/init.luau for the Shatter pipeline and _Core/Enums.luau for
+-- every enum referenced in configs below.
 
 --[=[
 	@class Facet
 ]=]
 
-local VoxelController = require(script.VoxelController)
-local PendingResult = require(script.VoxelController.PendingResult)
-local Enums = require(script.Enums)
-local ConfigModule = require(script.Config)
+local VoxelController = require(script._Classes.VoxelController)
+local PendingResult = require(script._Classes.VoxelController.PendingResult)
+local Enums = require(script._Core.Enums)
+local ConfigModule = require(script._Core.Config)
 
 local Facet = {}
 
@@ -114,280 +114,10 @@ end
 
 return Facet
 ]])
-mod("Config", _1, [[
+local _2 = folder("_Classes", _1)
+local _3 = mod("VoxelController", _2, [[
 -- Facet
--- Config.luau
--- Plinko Labs
---
--- Global, process-wide feature flags every VoxelController/Voxel reads directly - call
--- Facet.Configure to flip one and every controller picks it up on its next Shatter/Cleanup.
--- Multithreading/GreedyMeshing/ObjectPooling are all read on the calling thread, before any
--- Actor work starts - none of this table is ever shared INTO a desynchronized Actor as live
--- state. GreedyMeshing crosses that boundary as a plain field on the Job instead (see
--- VoxelController/Workers/init.luau) since requiring this module from inside an Actor would get
--- its own independent copy, not the one Facet.Configure just changed.
-
---[=[
-	@class Config
-	Global feature flags - set with [Facet.Configure]. Defaults match the documented behaviour
-	the rest of Facet's docs assume.
-]=]
-export type Config = {
-	ObjectPooling: boolean,
-	Multithreading: boolean,
-	GreedyMeshing: boolean,
-}
-
-local Config: Config = {
-	--[=[
-		@within Config
-		@prop ObjectPooling boolean
-		Default `false`. When `true`, produced voxel `Part`s are drawn from and returned to a
-		small pool (internal `Pool.luau`) instead of `Instance.new`/`Destroy` every time - fewer
-		allocations under heavy, repeated destruction, at the cost of pooled parts sitting
-		(disabled, invisible) under `workspace._Bin.Pool` instead of actually being destroyed.
-	]=]
-	ObjectPooling = false,
-	--[=[
-		@within Config
-		@prop Multithreading boolean
-		Default `true`. When `true`, `Relative` controllers split multi-part `Shatter` calls
-		across the `Workers` Actor pool. Set `false` to force every call to run serially on the
-		calling thread instead - useful for debugging, or if the Actor pool isn't behaving in
-		your game.
-	]=]
-	Multithreading = true,
-	--[=[
-		@within Config
-		@prop GreedyMeshing boolean
-		Default `true`. When `true`, cells produced outside a hitbox (`Result.Voxels.Extra`) are
-		merged into the fewest boxes that cover them. Set `false` to emit one part per grid cell
-		instead - more parts, but every cell individually addressable.
-	]=]
-	GreedyMeshing = true,
-}
-
---[=[
-	@within Config
-	Merges `overrides` into the shared config table - call it once, anywhere, before or while
-	using Facet; every controller reads the same table. Unknown keys error immediately instead
-	of being silently ignored.
-]=]
-local function configure(overrides: { ObjectPooling: boolean?, Multithreading: boolean?, GreedyMeshing: boolean? })
-	for key, value in overrides do
-		assert((Config :: any)[key] ~= nil, `Facet.Configure: unknown key "{tostring(key)}"`);
-		(Config :: any)[key] = value
-	end
-end
-
-return {
-	Config = Config,
-	configure = configure,
-}
-]])
-local _2 = mod("Enums", _1, [[
--- Facet
--- Enums/init.luau
--- Plinko Labs
-
---[=[
-	@class Enums
-	Every string-enum Facet's config and Result objects use. Each one is also re-exported as a
-	type off the top-level `Facet` module (`Facet.ControllerType`, `Facet.RuntimeType`, etc.), so
-	you don't need to reach into `Facet.Enums` just to annotate a variable.
-]=]
-local Enums = {}
-
---[=[
-	@within Enums
-	@prop ControllerType {Relative: "Relative", Absolute: "Absolute"}
-	Passed as `DefineConfig.Type`. `Relative` sizes dynamically toward `RecommendedVoxelSize`
-	and splits multi-part Shatter calls across the Workers Actor pool; `Absolute` uses a fixed
-	`VoxelSize` and never threads.
-]=]
-
---[=[
-	@within Enums
-	@prop RuntimeType {Instant: "Instant", Timeline: "Timeline"}
-	Passed as `DefineConfig.RuntimeType`. `Instant` (default) runs every `Shatter` call the
-	moment it's called; `Timeline` queues calls until `Controller:Start()` flushes them in order.
-]=]
-
---[=[
-	@within Enums
-	@prop HitboxType {Whole: "Whole", Partial: "Partial"}
-	Passed as `HitboxConfig.HitboxType`. `Partial` (default) slices whatever the hitbox finds;
-	`Whole` returns parts the hitbox fully contains untouched, with no slicing.
-]=]
-
---[=[
-	@within Enums
-	@prop QueryType {Raycast: "Raycast", Box: "Box", Sphere: "Sphere", Region: "Region"}
-	Passed as `HitboxConfig.QueryType`. Mirrors Roblox's own spatial query kinds. `Box`/`Region`
-	run through the Octree + an exact box/AABB test, `Sphere` through the Octree + a distance
-	test, and `Raycast` casts directly through the engine (single closest hit - see the README's
-	Raycast caveat).
-]=]
-
---[=[
-	@within Enums
-	@prop Effects {Explode: "Explode", Anchored: "Anchored", Chunk: "Chunk", Slice: "Slice", Blackhole: "Blackhole", Whitehole: "Whitehole", Scatter: "Scatter", Shrink: "Shrink"}
-	Keys into `ShatterConfig.Effects`. See [docs/effects](https://mkl48.github.io/Facet/effects) for
-	the full config shape each one reads:
-
-	- `Explode = {Radius: number}` - pushes the voxel outward from the Shatter origin.
-	- `Anchored = boolean` - sets the produced part's `Anchored` directly.
-	- `Chunk = boolean | {BreakSpeed: number?, BreakRadius: number?}` - welds every voxel a
-	  Shatter call produced (Partial *and* Extra) into one unanchored rigid assembly, so the
-	  remainder of a building falls as a single piece once its support is cut away, instead of
-	  every voxel tumbling apart individually. A weld breaks - detaching that piece and everything
-	  within `BreakRadius` studs of it (default `4`) - the moment its relative impact speed against
-	  whatever it hit reaches `BreakSpeed` studs/sec (default `40`), so the assembly fractures into
-	  smaller chunks on a hard enough landing instead of staying one rigid lump forever.
-	- `Slice = {Normal: Vector3?, Speed: number?}` - splits voxels either side of a plane (through
-	  the Shatter origin, facing `Normal`) apart along that normal at `Speed` studs/sec.
-	- `Blackhole = {Position: Vector3?, Duration: number?}` - tweens the voxel into `Position`
-	  while shrinking it to nothing, then destroys/releases it.
-	- `Whitehole = {Position: Vector3?, Speed: number?}` - launches the voxel directly away from
-	  `Position` at `Speed` studs/sec (like `Explode`, but a fixed point and speed instead of a
-	  radius).
-	- `Scatter = {Speed: number?}` - launches the voxel in a random direction at `Speed` studs/sec.
-	- `Shrink = {Duration: number?}` - tweens the voxel's `Size` down to nothing over `Duration`
-	  seconds, then destroys/releases it.
-]=]
-
---[=[
-	@within Enums
-	@prop Cleanup {Rebuild: "Rebuild", Fade: "Fade", Destroy: "Destroy"}
-	Passed as `ShatterConfig.Cleanup.Method`, or to `Voxel:Cleanup` directly. `Destroy` is instant;
-	`Fade` tweens `Transparency` to 1 then destroys; `Rebuild` tweens the voxel's `CFrame` back
-	to `OriginalCFrame` and never destroys it.
-]=]
-
---[=[
-	@within Enums
-	@prop Event {NewVoxel: "NewVoxel", Destroyed: "Destroyed"}
-	Passed to `PendingResult:Next`. `NewVoxel` fires once, right after voxelization/Effects;
-	`Destroyed` fires once every `Partial` voxel from that call has actually been destroyed by
-	Cleanup (never fires if `Cleanup` was `Rebuild` or unset).
-]=]
-
-export type ControllerType = "Relative" | "Absolute"
-
-export type RuntimeType = "Instant" | "Timeline"
-
-export type HitboxType = "Whole" | "Partial"
-
--- mirrors Roblox's own spatial query kinds. All four are wired up in VoxelController: Box and
--- Region run through the Octree + an exact box/AABB test, Sphere through the Octree + a
--- distance test, and Raycast casts directly (single closest hit - see README).
-export type QueryType = "Raycast" | "Box" | "Sphere" | "Region"
-
-export type Effects = "Explode" | "Anchored" | "Chunk" | "Slice" | "Blackhole" | "Whitehole" | "Scatter" | "Shrink"
-
-export type Cleanup = "Rebuild" | "Fade" | "Destroy"
-
-export type Event = "NewVoxel" | "Destroyed"
-
-Enums.ControllerType = {
-	Relative = "Relative",
-	Absolute = "Absolute",
-}
-
-Enums.RuntimeType = {
-	Instant = "Instant",
-	Timeline = "Timeline",
-}
-
-Enums.HitboxType = {
-	Whole = "Whole",
-	Partial = "Partial",
-}
-
-Enums.QueryType = {
-	Raycast = "Raycast",
-	Box = "Box",
-	Sphere = "Sphere",
-	Region = "Region",
-}
-
-Enums.Effects = {
-	Explode = "Explode",
-	Anchored = "Anchored",
-	Chunk = "Chunk",
-	Slice = "Slice",
-	Blackhole = "Blackhole",
-	Whitehole = "Whitehole",
-	Scatter = "Scatter",
-	Shrink = "Shrink",
-}
-
-Enums.Cleanup = {
-	Rebuild = "Rebuild",
-	Fade = "Fade",
-	Destroy = "Destroy",
-}
-
-Enums.Event = {
-	NewVoxel = "NewVoxel",
-	Destroyed = "Destroyed",
-}
-
-return Enums
-]])
-mod("Pool", _1, [[
--- Facet
--- Pool.luau
--- Plinko Labs
---
--- A tiny Part object pool VoxelController draws from when Config.ObjectPooling is true - reused
--- across Shatter calls instead of Instance.new/Destroy every voxel. Parked parts sit disabled
--- under workspace._Bin.Pool until reacquired. Internal - not part of the public API surface
--- (no @class tag, same as Octree.luau).
-
-local stack: { Part } = {}
-
-local function container(): Folder
-	local bin = workspace:FindFirstChild("_Bin")
-	if not bin then
-		bin = Instance.new("Folder")
-		bin.Name = "_Bin"
-		bin.Parent = workspace
-	end
-	local pool = bin:FindFirstChild("Pool")
-	if not pool then
-		pool = Instance.new("Folder")
-		pool.Name = "Pool"
-		pool.Parent = bin
-	end
-	return pool :: Folder
-end
-
-local function acquire(): Part
-	local part = table.remove(stack)
-	if part then
-		return part
-	end
-	return Instance.new("Part")
-end
-
-local function release(part: Part)
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanQuery = false
-	part.CanTouch = false
-	part.Parent = container()
-	table.insert(stack, part)
-end
-
-return {
-	acquire = acquire,
-	release = release,
-}
-]])
-local _3 = mod("VoxelController", _1, [[
--- Facet
--- VoxelController/init.luau
+-- _Classes/VoxelController/init.luau
 -- Plinko Labs
 --
 -- Returned by Facet.Define(). Owns one Shatter pipeline: resolve candidate parts -> (optionally)
@@ -401,41 +131,19 @@ local _3 = mod("VoxelController", _1, [[
 -- per-part grid classification + greedy meshing across an Actor pool when a call touches more
 -- than one part - see Workers/init.luau and _voxelizeBatch below.
 
-local Enums = require(script.Parent.Enums)
+local Enums = require(script.Parent.Parent._Core.Enums)
 local PendingResult = require(script.PendingResult)
 local VoxelModule = require(script.Voxel)
 local Voxelize = require(script.Voxelize)
-local Octree = require(script.Octree)
+local Octree = require(script.Parent.Parent._Patterns.Octree)
 local Workers = require(script.Workers)
-local ConfigModule = require(script.Parent.Config)
-local Pool = require(script.Parent.Pool)
+local ConfigModule = require(script.Parent.Parent._Core.Config)
+local Pool = require(script.Parent.Parent._Patterns.Pool)
 
 local Config = ConfigModule.Config
 
 local Voxel = VoxelModule.new
 local applyEffects = VoxelModule.applyEffects
-
--- Every Chunk assembly's pieces share this one CollisionGroup, set non-collidable with itself.
--- The voxel grid produces pieces that touch exactly at shared faces - without this, the moment
--- they're unanchored and welded together, the physics solver treats that contact as an overlap
--- and fires a separating impulse, which spikes AssemblyLinearVelocity past any BreakSpeed
--- threshold (no matter how high) before gravity ever gets a chance to make the assembly fall as
--- one piece. Registered once and reused for every Chunk call, not per-call - one of the engine's
--- 32 collision group slots, permanently. CanTouch stays true (set in _emitCells) so impact
--- detection against the world (still in the normal `Default` group) keeps working.
-local CHUNK_COLLISION_GROUP = "Facet_Chunk"
-local chunkCollisionGroupReady = false
-local function ensureChunkCollisionGroup()
-	if chunkCollisionGroupReady then
-		return
-	end
-	local PhysicsService = game:GetService("PhysicsService")
-	if not PhysicsService:IsCollisionGroupRegistered(CHUNK_COLLISION_GROUP) then
-		PhysicsService:RegisterCollisionGroup(CHUNK_COLLISION_GROUP)
-	end
-	PhysicsService:CollisionGroupSetCollidable(CHUNK_COLLISION_GROUP, CHUNK_COLLISION_GROUP, false)
-	chunkCollisionGroupReady = true
-end
 
 -- Every voxel produced from slicing a part lands under workspace._Bin.Voxels.<PartName>,
 -- grouped by the original part's Name, instead of back into wherever the part used to live -
@@ -784,6 +492,14 @@ end
 -- its own disconnected chunk. A weld breaks - detaching that piece and everything within
 -- BreakRadius of it - the moment its relative impact speed reaches BreakSpeed, so a hard enough
 -- landing fractures the assembly into smaller chunks instead of staying one rigid lump forever.
+--
+-- Pieces keep colliding with each other (no CollisionGroup trick) - which means the moment
+-- they're unanchored, touching grid-adjacent siblings register as Touched too. Those don't count
+-- as "load": only a Touched against something outside the assembly can trigger a break, and even
+-- those are ignored for a brief CHUNK_GRACE_PERIOD right after creation, so the physics solver
+-- settling the freshly welded geometry into place doesn't read as a hit.
+local CHUNK_GRACE_PERIOD = 0.5
+
 function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { VoxelModule.Voxel }, chunkConfig: any)
 	local settings = if type(chunkConfig) == "table" then chunkConfig else {}
 	local breakSpeed = settings.BreakSpeed or 40
@@ -796,10 +512,10 @@ function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { Vox
 	for _, voxel in extra do
 		table.insert(pieces, voxel.Instance)
 	end
-	ensureChunkCollisionGroup()
+	local pieceSet: { [BasePart]: boolean } = {}
 	for _, piece in pieces do
 		piece.Anchored = false
-		piece.CollisionGroup = CHUNK_COLLISION_GROUP
+		pieceSet[piece] = true
 	end
 	if #pieces < 2 then
 		return
@@ -818,6 +534,7 @@ function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { Vox
 
 	local connections: { RBXScriptConnection } = {}
 	local remaining = #pieces - 1
+	local createdAt = os.clock()
 
 	local function detachNear(position: Vector3)
 		for piece, weld in welds do
@@ -839,7 +556,15 @@ function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { Vox
 		table.insert(
 			connections,
 			piece.Touched:Connect(function(other: BasePart)
+				-- A sibling brushing against another sibling isn't a load - it's the assembly's
+				-- own geometry resting against itself. Only something outside the assembly counts.
+				if pieceSet[other] then
+					return
+				end
 				local now = os.clock()
+				if now - createdAt < CHUNK_GRACE_PERIOD then
+					return
+				end
 				if (lastCheck[piece] or 0) + 0.1 > now then
 					return
 				end
@@ -1087,153 +812,9 @@ end
 
 return VoxelController
 ]])
-mod("Octree", _3, [[
--- Facet
--- VoxelController/Octree.luau
--- Plinko Labs
---
--- Self-contained spatial index over a controller's candidate parts. Unlike
--- workspace:GetPartBoundsInBox, it doesn't depend on CanQuery/CanCollide or the part actually
--- living in workspace - anything inserted is queryable. Broad-phase only: Query() returns every
--- part whose containing leaf could overlap a query sphere; callers run the exact geometric test
--- (see VoxelController's _intersectsBox/_intersectsSphere/_intersectsRegion) on the result.
--- Rebuilt per-Shatter from the controller's resolved candidates rather than kept permanently in
--- sync with the DataModel - candidate sets are already small relative to a whole game, and
--- rebuilding sidesteps having to track every candidate's live position.
-
-export type Node = {
-	Center: Vector3,
-	HalfSize: number,
-	Parts: { BasePart },
-	Children: { Node }?,
-}
-
-local MAX_PARTS_PER_NODE = 8
-local MIN_HALF_SIZE = 2
-
-local Octree = {}
-Octree.__index = Octree
-
-function Octree.new(center: Vector3, halfSize: number)
-	return setmetatable({
-		_root = { Center = center, HalfSize = halfSize, Parts = {}, Children = nil } :: Node,
-	}, Octree)
-end
-
-local function octantIndex(center: Vector3, point: Vector3): number
-	local index = 0
-	if point.X >= center.X then
-		index += 1
-	end
-	if point.Y >= center.Y then
-		index += 2
-	end
-	if point.Z >= center.Z then
-		index += 4
-	end
-	return index + 1
-end
-
-local function octantOffset(index: number): Vector3
-	index -= 1
-	local x = if bit32.band(index, 1) ~= 0 then 1 else -1
-	local y = if bit32.band(index, 2) ~= 0 then 1 else -1
-	local z = if bit32.band(index, 4) ~= 0 then 1 else -1
-	return Vector3.new(x, y, z)
-end
-
-local function split(node: Node)
-	local children = {}
-	local childHalf = node.HalfSize / 2
-	for i = 1, 8 do
-		local offset = octantOffset(i) * (childHalf / 2)
-		children[i] = { Center = node.Center + offset, HalfSize = childHalf, Parts = {}, Children = nil } :: Node
-	end
-	node.Children = children
-	local parts = node.Parts
-	node.Parts = {}
-	for _, part in parts do
-		local idx = octantIndex(node.Center, part.Position)
-		table.insert((children[idx] :: Node).Parts, part)
-	end
-end
-
-local function insert(node: Node, part: BasePart)
-	if node.Children then
-		local idx = octantIndex(node.Center, part.Position)
-		insert(node.Children[idx], part)
-		return
-	end
-	table.insert(node.Parts, part)
-	if #node.Parts > MAX_PARTS_PER_NODE and node.HalfSize > MIN_HALF_SIZE then
-		split(node)
-	end
-end
-
-function Octree:Insert(part: BasePart)
-	insert(self._root, part)
-end
-
-local function nodeIntersectsSphere(node: Node, center: Vector3, radius: number): boolean
-	local diff = node.Center - center
-	local nodeRadius = node.HalfSize * 1.7320508 -- sqrt(3): radius of the node's bounding sphere
-	return diff.Magnitude <= nodeRadius + radius
-end
-
-local function query(node: Node, center: Vector3, radius: number, results: { BasePart })
-	if not nodeIntersectsSphere(node, center, radius) then
-		return
-	end
-	if node.Children then
-		for _, child in node.Children do
-			query(child, center, radius, results)
-		end
-		return
-	end
-	for _, part in node.Parts do
-		table.insert(results, part)
-	end
-end
-
--- Broad-phase: every part whose leaf could overlap a sphere of `radius` around `center`. Not
--- an exact test on its own - callers narrow the result with a precise shape check.
-function Octree:Query(center: Vector3, radius: number): { BasePart }
-	local results = {}
-	query(self._root, center, radius, results)
-	return results
-end
-
--- Builds a fresh tree sized to fit every given part, then inserts them all.
-function Octree.fromParts(parts: { BasePart })
-	local minP: Vector3? = nil
-	local maxP: Vector3? = nil
-	for _, part in parts do
-		local pos = part.Position
-		if not minP then
-			minP, maxP = pos, pos
-		else
-			minP = Vector3.new(math.min((minP :: Vector3).X, pos.X), math.min((minP :: Vector3).Y, pos.Y), math.min((minP :: Vector3).Z, pos.Z))
-			maxP = Vector3.new(math.max((maxP :: Vector3).X, pos.X), math.max((maxP :: Vector3).Y, pos.Y), math.max((maxP :: Vector3).Z, pos.Z))
-		end
-	end
-	minP = minP or Vector3.zero
-	maxP = maxP or Vector3.zero
-
-	local center = ((minP :: Vector3) + (maxP :: Vector3)) / 2
-	local halfSize = math.max(((maxP :: Vector3) - (minP :: Vector3)).Magnitude / 2, 4)
-
-	local octree = Octree.new(center, halfSize)
-	for _, part in parts do
-		octree:Insert(part)
-	end
-	return octree
-end
-
-return Octree
-]])
 mod("PendingResult", _3, [[
 -- Facet
--- VoxelController/PendingResult.luau
+-- _Classes/VoxelController/PendingResult.luau
 -- Plinko Labs
 --
 -- The chain object Shatter returns: Controller:Shatter(...):Next(Enums.Event.X):Then(cb).
@@ -1241,7 +822,7 @@ mod("PendingResult", _3, [[
 -- listeners registered after a past event has already fired never run for that firing
 -- (each PendingResult only lives for one Shatter call).
 
-local Enums = require(script.Parent.Parent.Enums)
+local Enums = require(script.Parent.Parent.Parent._Core.Enums)
 local VoxelModule = require(script.Parent.Voxel)
 
 export type Voxel = VoxelModule.Voxel
@@ -1310,7 +891,7 @@ return PendingResult
 ]])
 mod("Voxel", _3, [[
 -- Facet
--- VoxelController/Voxel.luau
+-- _Classes/VoxelController/Voxel.luau
 -- Plinko Labs
 --
 -- Wraps one produced BasePart with the extra behaviour Result.Voxels entries carry: a
@@ -1319,9 +900,9 @@ mod("Voxel", _3, [[
 -- only accepts Effects/Size - there's no hitbox left to detect against, the part IS the target.
 
 local TweenService = game:GetService("TweenService")
-local Enums = require(script.Parent.Parent.Enums)
-local ConfigModule = require(script.Parent.Parent.Config)
-local Pool = require(script.Parent.Parent.Pool)
+local Enums = require(script.Parent.Parent.Parent._Core.Enums)
+local ConfigModule = require(script.Parent.Parent.Parent._Core.Config)
+local Pool = require(script.Parent.Parent.Parent._Patterns.Pool)
 
 local Config = ConfigModule.Config
 
@@ -1524,7 +1105,7 @@ return { new = Voxel.new, applyEffects = applyEffects }
 ]])
 mod("Voxelize", _3, [[
 -- Facet
--- VoxelController/Voxelize.luau
+-- _Classes/VoxelController/Voxelize.luau
 -- Plinko Labs
 --
 -- Slices one BasePart into an axis-aligned grid of same-size cubes at the part's own
@@ -1853,20 +1434,23 @@ return {
 ]])
 local _4 = mod("Workers", _3, [[
 -- Facet
--- VoxelController/Workers/init.luau
+-- _Classes/VoxelController/Workers/init.luau
 -- Plinko Labs
 --
--- Coordinates a small pool of Actors that run Voxelize.computeCells() in parallel - the
--- multithreaded path Relative controllers take when a Shatter call touches more than one
--- candidate part. Each job hands a worker plain data only (a Grid and, if there's a hitbox, a
--- Voxelize.PointHitbox) - never the BasePart itself - because Instance access isn't safe from
--- a desynchronized Actor. Instance creation always happens back on the calling thread once
--- every job's plain {CFrame, Size, Color, Material, Kind} result comes back.
+-- Coordinates a small pool of Actors (built via _Patterns/Thread) that run
+-- Voxelize.computeCells() in parallel - the multithreaded path Relative controllers take when a
+-- Shatter call touches more than one candidate part. Each job hands a worker plain data only (a
+-- Grid and, if there's a hitbox, a Voxelize.PointHitbox) - never the BasePart itself - because
+-- Instance access isn't safe from a desynchronized Actor. Instance creation always happens back
+-- on the calling thread once every job's plain {CFrame, Size, Color, Material, Kind} result
+-- comes back.
 --
 -- RunContext (Server/Client) can only be written from Studio/Plugin capability, never from a
--- live game script - so the pool clones a pre-baked "Worker" (Server) or "WorkerClient" (Client)
--- template instead of mutating RunContext at runtime. Both templates are baked at sync/install
--- time (see default.project.json's $properties and scripts/build-installer.luau's inst() calls).
+-- live game script - so the pool clones a pre-baked "WorkerServer" (Server) or "WorkerClient"
+-- (Client) shell instead of mutating RunContext at runtime. Both are baked at sync/install time
+-- (see default.project.json's $properties and scripts/build-installer.luau's inst() calls); the
+-- actual worker logic both shells share lives in Worker.luau, a plain context-agnostic
+-- ModuleScript.
 --
 -- NOTE: this can't be exercised by `lune run` - headless Lune has no Actor/parallel Luau
 -- support at all, so this module has only been verified by reading against the documented
@@ -1876,6 +1460,7 @@ local _4 = mod("Workers", _3, [[
 
 local RunService = game:GetService("RunService")
 local Voxelize = require(script.Parent.Voxelize)
+local Thread = require(script.Parent.Parent.Parent._Patterns.Thread)
 
 local POOL_SIZE = 4
 
@@ -1897,7 +1482,7 @@ export type Job = { Grid: Voxelize.Grid, Hitbox: Voxelize.PointHitbox?, GreedyMe
 ]=]
 local Workers = {}
 
-local pool: { Actor }? = nil
+local pool: Thread.Thread? = nil
 local poolFailed = false
 
 local function runInline(job: Job): { Voxelize.MergedVoxel }
@@ -1912,72 +1497,15 @@ local function runInline(job: Job): { Voxelize.MergedVoxel }
 	return Voxelize.computeCells(job.Grid, classify, job.GreedyMeshing)
 end
 
--- How long to wait for every worker in a freshly built pool to report Ready before giving up
--- and falling back to single-threaded voxelization. Each worker only needs to run its own
--- top-level script body once - if it hasn't managed that in 5 seconds something is genuinely
--- wrong (not just a slow frame), so this isn't tuned to be tight against normal startup time.
-local POOL_READY_TIMEOUT = 5
-
-local function buildPool(): { Actor }?
-	local ok, result = pcall(function()
-		-- RunContext can't be set from a live game script (Studio/Plugin-only capability) -
-		-- so we ship two pre-baked templates instead of mutating one at runtime. See
-		-- default.project.json / scripts/build-installer.luau for where each gets its RunContext.
-		local templateName = if RunService:IsServer() then "Worker" else "WorkerClient"
-		local template = (script :: Instance):FindFirstChild(templateName) :: Script?
-		assert(template, `Facet Workers: missing "{templateName}" template`)
-		local built = {}
-		local readyEvents: { BindableEvent } = {}
-		for i = 1, POOL_SIZE do
-			local actor = Instance.new("Actor")
-			actor.Name = "FacetWorker" .. i
-
-			local worker = template:Clone()
-			local ready = Instance.new("BindableEvent")
-			ready.Name = "Ready"
-			ready.Parent = worker
-
-			worker.Enabled = true
-			worker.Parent = actor
-			actor.Parent = script
-
-			built[i] = actor
-			readyEvents[i] = ready
-		end
-
-		-- A newly parented Script doesn't start running synchronously - it begins on a later
-		-- resumption, after this function has already returned to the caller. Block here until
-		-- every worker has actually reached its BindToMessageParallel call (see Worker.server.luau),
-		-- so the caller never dispatches a job to a worker that isn't listening yet.
-		for _, ready in readyEvents do
-			local fired = false
-			local connection = ready.Event:Once(function()
-				fired = true
-			end)
-			local deadline = os.clock() + POOL_READY_TIMEOUT
-			while not fired and os.clock() < deadline do
-				task.wait()
-			end
-			connection:Disconnect()
-			ready:Destroy()
-			assert(fired, "Facet Workers: a worker never signaled Ready in time")
-		end
-
-		return built
-	end)
-	if not ok then
-		warn("[Facet] Worker pool failed to start, falling back to single-threaded voxelization: " .. tostring(result))
-		return nil
-	end
-	return result
-end
-
-local function getPool(): { Actor }?
+local function getPool(): Thread.Thread?
 	if poolFailed then
 		return nil
 	end
 	if not pool then
-		pool = buildPool()
+		local templateName = if RunService:IsServer() then "WorkerServer" else "WorkerClient"
+		local template = (script :: Instance):FindFirstChild(templateName) :: Script?
+		assert(template, `Facet Workers: missing "{templateName}" template`)
+		pool = Thread.new(template, script, POOL_SIZE)
 		poolFailed = pool == nil
 	end
 	return pool
@@ -1991,8 +1519,8 @@ end
 	available.
 ]=]
 function Workers.computeAsync(jobs: { Job }): { { Voxelize.MergedVoxel } }
-	local actors = getPool()
-	if not actors then
+	local thread = getPool()
+	if not thread then
 		local results = {}
 		for i, job in jobs do
 			results[i] = runInline(job)
@@ -2000,25 +1528,2651 @@ function Workers.computeAsync(jobs: { Job }): { { Voxelize.MergedVoxel } }
 		return results
 	end
 
+	local argsList = {}
+	for i, job in jobs do
+		argsList[i] = { job.Grid, job.Hitbox, job.GreedyMeshing }
+	end
+	return thread:Map("ComputeCells", argsList)
+end
+
+return Workers
+]])
+mod("Worker", _4, [[
+-- Facet
+-- _Classes/VoxelController/Workers/Worker.luau
+-- Plinko Labs
+--
+-- The actual worker logic - a plain ModuleScript, context-agnostic. Whether it ends up running
+-- on the server or the client is entirely down to which RunContext-baked shell (WorkerServer or
+-- WorkerClient, in this same folder) requires and calls it; this module itself never checks or
+-- cares which realm it's on. Touches no Instance except the `reply` BindableEvent it's handed,
+-- and only after resynchronizing - everything in between is Voxelize, which is pure.
+
+local Voxelize = require(script.Parent.Parent.Voxelize)
+
+--[=[
+	@class Worker
+	The voxelization job handler every pool Actor binds. Not part of the public API - see
+	[Workers].
+]=]
+local Worker = {}
+
+--[=[
+	@within Worker
+	Binds `actor` to handle "ComputeCells" messages in parallel - `BindToMessageParallel` hands
+	this its own desynchronized thread per message, so jobs for different Actors genuinely run
+	at the same time.
+]=]
+function Worker.bind(actor: Actor)
+	actor:BindToMessageParallel("ComputeCells", function(reply: BindableEvent, grid: Voxelize.Grid, hitbox: Voxelize.PointHitbox?, greedyMeshing: boolean?)
+		local classify = if hitbox
+			then function(pos: Vector3)
+				return Voxelize.classifyPoint(pos, hitbox)
+			end
+			else function()
+				return "Partial"
+			end
+
+		local cells = Voxelize.computeCells(grid, classify, greedyMeshing)
+
+		task.synchronize()
+		reply:Fire(cells)
+	end)
+end
+
+return Worker
+]])
+inst("LocalScript", "WorkerClient", _4, [[
+-- Facet
+-- _Classes/VoxelController/Workers/WorkerClient.client.luau
+-- Plinko Labs
+--
+-- The Client-realm shell - identical in spirit to WorkerServer.server.luau, just baked with
+-- RunContext = Client instead of Server (see scripts/build-installer.luau). See Worker.luau for
+-- the actual logic; see WorkerServer.server.luau for why two thin shells exist instead of one
+-- context-aware script.
+
+local Worker = require(script.Parent.Worker)
+
+local actor = script:GetActor()
+assert(actor, "WorkerClient.client.luau must run inside an Actor")
+Worker.bind(actor)
+
+local ready = script:FindFirstChild("Ready")
+if ready then
+	(ready :: BindableEvent):Fire()
+end
+]], "Client")
+inst("Script", "WorkerServer", _4, [[
+-- Facet
+-- _Classes/VoxelController/Workers/WorkerServer.server.luau
+-- Plinko Labs
+--
+-- The Server-realm shell: two lines of real work, everything else lives in Worker.luau (a plain
+-- ModuleScript, context-agnostic). RunContext = Server is baked onto this Script at install/sync
+-- time (see scripts/build-installer.luau) - it can't be set from a live game script, which is the
+-- only reason this shell exists separately from WorkerClient.client.luau instead of one script
+-- detecting its own context at runtime.
+
+local Worker = require(script.Parent.Worker)
+
+local actor = script:GetActor()
+assert(actor, "WorkerServer.server.luau must run inside an Actor")
+Worker.bind(actor)
+
+-- A freshly cloned/parented Script doesn't start running the instant Thread.new() sets
+-- worker.Parent = actor - it begins on a later resumption, after the call that builds the pool
+-- has already returned. Without this, the very first SendMessage to a brand new pool can arrive
+-- before Worker.bind above has even run, gets silently dropped, and the caller hangs forever
+-- waiting for a reply that never comes. Firing Ready here, right after binding, lets Thread.new
+-- confirm every worker is actually listening before the pool is handed back.
+local ready = script:FindFirstChild("Ready")
+if ready then
+	(ready :: BindableEvent):Fire()
+end
+]], "Server")
+local _5 = folder("_Core", _1)
+mod("Config", _5, [[
+-- Facet
+-- _Core/Config.luau
+-- Plinko Labs
+--
+-- Global, process-wide feature flags every VoxelController/Voxel reads directly - call
+-- Facet.Configure to flip one and every controller picks it up on its next Shatter/Cleanup.
+-- Multithreading/GreedyMeshing/ObjectPooling are all read on the calling thread, before any
+-- Actor work starts - none of this table is ever shared INTO a desynchronized Actor as live
+-- state. GreedyMeshing crosses that boundary as a plain field on the Job instead (see
+-- _Classes/VoxelController/Workers/init.luau) since requiring this module from inside an Actor
+-- would get its own independent copy, not the one Facet.Configure just changed.
+
+--[=[
+	@class Config
+	Global feature flags - set with [Facet.Configure]. Defaults match the documented behaviour
+	the rest of Facet's docs assume.
+]=]
+export type Config = {
+	ObjectPooling: boolean,
+	Multithreading: boolean,
+	GreedyMeshing: boolean,
+}
+
+local Config: Config = {
+	--[=[
+		@within Config
+		@prop ObjectPooling boolean
+		Default `false`. When `true`, produced voxel `Part`s are drawn from and returned to a
+		small pool (internal `Pool.luau`) instead of `Instance.new`/`Destroy` every time - fewer
+		allocations under heavy, repeated destruction, at the cost of pooled parts sitting
+		(disabled, invisible) under `workspace._Bin.Pool` instead of actually being destroyed.
+	]=]
+	ObjectPooling = false,
+	--[=[
+		@within Config
+		@prop Multithreading boolean
+		Default `true`. When `true`, `Relative` controllers split multi-part `Shatter` calls
+		across the `Workers` Actor pool. Set `false` to force every call to run serially on the
+		calling thread instead - useful for debugging, or if the Actor pool isn't behaving in
+		your game.
+	]=]
+	Multithreading = true,
+	--[=[
+		@within Config
+		@prop GreedyMeshing boolean
+		Default `true`. When `true`, cells produced outside a hitbox (`Result.Voxels.Extra`) are
+		merged into the fewest boxes that cover them. Set `false` to emit one part per grid cell
+		instead - more parts, but every cell individually addressable.
+	]=]
+	GreedyMeshing = true,
+}
+
+--[=[
+	@within Config
+	Merges `overrides` into the shared config table - call it once, anywhere, before or while
+	using Facet; every controller reads the same table. Unknown keys error immediately instead
+	of being silently ignored.
+]=]
+local function configure(overrides: { ObjectPooling: boolean?, Multithreading: boolean?, GreedyMeshing: boolean? })
+	for key, value in overrides do
+		assert((Config :: any)[key] ~= nil, `Facet.Configure: unknown key "{tostring(key)}"`);
+		(Config :: any)[key] = value
+	end
+end
+
+return {
+	Config = Config,
+	configure = configure,
+}
+]])
+mod("Enums", _5, [[
+-- Facet
+-- _Core/Enums.luau
+-- Plinko Labs
+
+--[=[
+	@class Enums
+	Every string-enum Facet's config and Result objects use. Each one is also re-exported as a
+	type off the top-level `Facet` module (`Facet.ControllerType`, `Facet.RuntimeType`, etc.), so
+	you don't need to reach into `Facet.Enums` just to annotate a variable.
+]=]
+local Enums = {}
+
+--[=[
+	@within Enums
+	@prop ControllerType {Relative: "Relative", Absolute: "Absolute"}
+	Passed as `DefineConfig.Type`. `Relative` sizes dynamically toward `RecommendedVoxelSize`
+	and splits multi-part Shatter calls across the Workers Actor pool; `Absolute` uses a fixed
+	`VoxelSize` and never threads.
+]=]
+
+--[=[
+	@within Enums
+	@prop RuntimeType {Instant: "Instant", Timeline: "Timeline"}
+	Passed as `DefineConfig.RuntimeType`. `Instant` (default) runs every `Shatter` call the
+	moment it's called; `Timeline` queues calls until `Controller:Start()` flushes them in order.
+]=]
+
+--[=[
+	@within Enums
+	@prop HitboxType {Whole: "Whole", Partial: "Partial"}
+	Passed as `HitboxConfig.HitboxType`. `Partial` (default) slices whatever the hitbox finds;
+	`Whole` returns parts the hitbox fully contains untouched, with no slicing.
+]=]
+
+--[=[
+	@within Enums
+	@prop QueryType {Raycast: "Raycast", Box: "Box", Sphere: "Sphere", Region: "Region"}
+	Passed as `HitboxConfig.QueryType`. Mirrors Roblox's own spatial query kinds. `Box`/`Region`
+	run through the Octree + an exact box/AABB test, `Sphere` through the Octree + a distance
+	test, and `Raycast` casts directly through the engine (single closest hit - see the README's
+	Raycast caveat).
+]=]
+
+--[=[
+	@within Enums
+	@prop Effects {Explode: "Explode", Anchored: "Anchored", Chunk: "Chunk", Slice: "Slice", Blackhole: "Blackhole", Whitehole: "Whitehole", Scatter: "Scatter", Shrink: "Shrink"}
+	Keys into `ShatterConfig.Effects`. See [docs/effects](https://mkl48.github.io/Facet/effects) for
+	the full config shape each one reads:
+
+	- `Explode = {Radius: number}` - pushes the voxel outward from the Shatter origin.
+	- `Anchored = boolean` - sets the produced part's `Anchored` directly.
+	- `Chunk = boolean | {BreakSpeed: number?, BreakRadius: number?}` - welds every voxel a
+	  Shatter call produced (Partial *and* Extra) into one unanchored rigid assembly, so the
+	  remainder of a building falls as a single piece once its support is cut away, instead of
+	  every voxel tumbling apart individually. A weld breaks - detaching that piece and everything
+	  within `BreakRadius` studs of it (default `4`) - the moment its relative impact speed against
+	  whatever it hit reaches `BreakSpeed` studs/sec (default `40`), so the assembly fractures into
+	  smaller chunks on a hard enough landing instead of staying one rigid lump forever.
+	- `Slice = {Normal: Vector3?, Speed: number?}` - splits voxels either side of a plane (through
+	  the Shatter origin, facing `Normal`) apart along that normal at `Speed` studs/sec.
+	- `Blackhole = {Position: Vector3?, Duration: number?}` - tweens the voxel into `Position`
+	  while shrinking it to nothing, then destroys/releases it.
+	- `Whitehole = {Position: Vector3?, Speed: number?}` - launches the voxel directly away from
+	  `Position` at `Speed` studs/sec (like `Explode`, but a fixed point and speed instead of a
+	  radius).
+	- `Scatter = {Speed: number?}` - launches the voxel in a random direction at `Speed` studs/sec.
+	- `Shrink = {Duration: number?}` - tweens the voxel's `Size` down to nothing over `Duration`
+	  seconds, then destroys/releases it.
+]=]
+
+--[=[
+	@within Enums
+	@prop Cleanup {Rebuild: "Rebuild", Fade: "Fade", Destroy: "Destroy"}
+	Passed as `ShatterConfig.Cleanup.Method`, or to `Voxel:Cleanup` directly. `Destroy` is instant;
+	`Fade` tweens `Transparency` to 1 then destroys; `Rebuild` tweens the voxel's `CFrame` back
+	to `OriginalCFrame` and never destroys it.
+]=]
+
+--[=[
+	@within Enums
+	@prop Event {NewVoxel: "NewVoxel", Destroyed: "Destroyed"}
+	Passed to `PendingResult:Next`. `NewVoxel` fires once, right after voxelization/Effects;
+	`Destroyed` fires once every `Partial` voxel from that call has actually been destroyed by
+	Cleanup (never fires if `Cleanup` was `Rebuild` or unset).
+]=]
+
+export type ControllerType = "Relative" | "Absolute"
+
+export type RuntimeType = "Instant" | "Timeline"
+
+export type HitboxType = "Whole" | "Partial"
+
+-- mirrors Roblox's own spatial query kinds. All four are wired up in VoxelController: Box and
+-- Region run through the Octree + an exact box/AABB test, Sphere through the Octree + a
+-- distance test, and Raycast casts directly (single closest hit - see README).
+export type QueryType = "Raycast" | "Box" | "Sphere" | "Region"
+
+export type Effects = "Explode" | "Anchored" | "Chunk" | "Slice" | "Blackhole" | "Whitehole" | "Scatter" | "Shrink"
+
+export type Cleanup = "Rebuild" | "Fade" | "Destroy"
+
+export type Event = "NewVoxel" | "Destroyed"
+
+Enums.ControllerType = {
+	Relative = "Relative",
+	Absolute = "Absolute",
+}
+
+Enums.RuntimeType = {
+	Instant = "Instant",
+	Timeline = "Timeline",
+}
+
+Enums.HitboxType = {
+	Whole = "Whole",
+	Partial = "Partial",
+}
+
+Enums.QueryType = {
+	Raycast = "Raycast",
+	Box = "Box",
+	Sphere = "Sphere",
+	Region = "Region",
+}
+
+Enums.Effects = {
+	Explode = "Explode",
+	Anchored = "Anchored",
+	Chunk = "Chunk",
+	Slice = "Slice",
+	Blackhole = "Blackhole",
+	Whitehole = "Whitehole",
+	Scatter = "Scatter",
+	Shrink = "Shrink",
+}
+
+Enums.Cleanup = {
+	Rebuild = "Rebuild",
+	Fade = "Fade",
+	Destroy = "Destroy",
+}
+
+Enums.Event = {
+	NewVoxel = "NewVoxel",
+	Destroyed = "Destroyed",
+}
+
+return Enums
+]])
+local _6 = mod("_Drivers", _1, [[
+-- Facet
+-- _Drivers/init.luau
+-- Plinko Labs
+--
+-- Reserved for swappable voxelization backends - DefineConfig.Drivers (see
+-- _Classes/VoxelController/init.luau) already accepts a Drivers table, but nothing reads it yet.
+-- Empty on purpose: there's only one driver (Voxelize.luau, wired directly into VoxelController)
+-- today, so there's nothing to register here until a second one exists.
+
+return {}
+]])
+local _7 = folder("_Packages", _1)
+mod("Promise", _7, [==[
+-- Vendored from evaera/roblox-lua-promise (MIT License)
+-- https://github.com/evaera/roblox-lua-promise
+
+--[[
+	An implementation of Promises similar to Promise/A+.
+]]
+
+local ERROR_NON_PROMISE_IN_LIST = "Non-promise value passed into %s at index %s"
+local ERROR_NON_LIST = "Please pass a list of promises to %s"
+local ERROR_NON_FUNCTION = "Please pass a handler function to %s!"
+local MODE_KEY_METATABLE = { __mode = "k" }
+
+local function isCallable(value)
+	if type(value) == "function" then
+		return true
+	end
+
+	if type(value) == "table" then
+		local metatable = getmetatable(value)
+		if metatable and type(rawget(metatable, "__call")) == "function" then
+			return true
+		end
+	end
+
+	return false
+end
+
+--[[
+	Creates an enum dictionary with some metamethods to prevent common mistakes.
+]]
+local function makeEnum(enumName, members)
+	local enum = {}
+
+	for _, memberName in ipairs(members) do
+		enum[memberName] = memberName
+	end
+
+	return setmetatable(enum, {
+		__index = function(_, k)
+			error(string.format("%s is not in %s!", k, enumName), 2)
+		end,
+		__newindex = function()
+			error(string.format("Creating new members in %s is not allowed!", enumName), 2)
+		end,
+	})
+end
+
+--[=[
+	An object to represent runtime errors that occur during execution.
+	Promises that experience an error like this will be rejected with
+	an instance of this object.
+
+	@class Error
+]=]
+local Error
+do
+	Error = {
+		Kind = makeEnum("Promise.Error.Kind", {
+			"ExecutionError",
+			"AlreadyCancelled",
+			"NotResolvedInTime",
+			"TimedOut",
+		}),
+	}
+	Error.__index = Error
+
+	function Error.new(options, parent)
+		options = options or {}
+		return setmetatable({
+			error = tostring(options.error) or "[This error has no error text.]",
+			trace = options.trace,
+			context = options.context,
+			kind = options.kind,
+			parent = parent,
+			createdTick = os.clock(),
+			createdTrace = debug.traceback(),
+		}, Error)
+	end
+
+	function Error.is(anything)
+		if type(anything) == "table" then
+			local metatable = getmetatable(anything)
+
+			if type(metatable) == "table" then
+				return rawget(anything, "error") ~= nil and type(rawget(metatable, "extend")) == "function"
+			end
+		end
+
+		return false
+	end
+
+	function Error.isKind(anything, kind)
+		assert(kind ~= nil, "Argument #2 to Promise.Error.isKind must not be nil")
+
+		return Error.is(anything) and anything.kind == kind
+	end
+
+	function Error:extend(options)
+		options = options or {}
+
+		options.kind = options.kind or self.kind
+
+		return Error.new(options, self)
+	end
+
+	function Error:getErrorChain()
+		local runtimeErrors = { self }
+
+		while runtimeErrors[#runtimeErrors].parent do
+			table.insert(runtimeErrors, runtimeErrors[#runtimeErrors].parent)
+		end
+
+		return runtimeErrors
+	end
+
+	function Error:__tostring()
+		local errorStrings = {
+			string.format("-- Promise.Error(%s) --", self.kind or "?"),
+		}
+
+		for _, runtimeError in ipairs(self:getErrorChain()) do
+			table.insert(
+				errorStrings,
+				table.concat({
+					runtimeError.trace or runtimeError.error,
+					runtimeError.context,
+				}, "\n")
+			)
+		end
+
+		return table.concat(errorStrings, "\n")
+	end
+end
+
+--[[
+	Packs a number of arguments into a table and returns its length.
+
+	Used to cajole varargs without dropping sparse values.
+]]
+local function pack(...)
+	return select("#", ...), { ... }
+end
+
+--[[
+	Returns first value (success), and packs all following values.
+]]
+local function packResult(success, ...)
+	return success, select("#", ...), { ... }
+end
+
+local function makeErrorHandler(traceback)
+	assert(traceback ~= nil, "traceback is nil")
+
+	return function(err)
+		-- If the error object is already a table, forward it directly.
+		-- Should we extend the error here and add our own trace?
+
+		if type(err) == "table" then
+			return err
+		end
+
+		return Error.new({
+			error = err,
+			kind = Error.Kind.ExecutionError,
+			trace = debug.traceback(tostring(err), 2),
+			context = "Promise created at:\n\n" .. traceback,
+		})
+	end
+end
+
+--[[
+	Calls a Promise executor with error handling.
+]]
+local function runExecutor(traceback, callback, ...)
+	return packResult(xpcall(callback, makeErrorHandler(traceback), ...))
+end
+
+--[[
+	Creates a function that invokes a callback with correct error handling and
+	resolution mechanisms.
+]]
+local function createAdvancer(traceback, callback, resolve, reject)
+	return function(...)
+		local ok, resultLength, result = runExecutor(traceback, callback, ...)
+
+		if ok then
+			resolve(unpack(result, 1, resultLength))
+		else
+			reject(result[1])
+		end
+	end
+end
+
+local function isEmpty(t)
+	return next(t) == nil
+end
+
+--[=[
+	An enum value used to represent the Promise's status.
+	@interface Status
+	@tag enum
+	@within Promise
+	.Started "Started" -- The Promise is executing, and not settled yet.
+	.Resolved "Resolved" -- The Promise finished successfully.
+	.Rejected "Rejected" -- The Promise was rejected.
+	.Cancelled "Cancelled" -- The Promise was cancelled before it finished.
+]=]
+--[=[
+	@prop Status Status
+	@within Promise
+	@readonly
+	@tag enums
+	A table containing all members of the `Status` enum, e.g., `Promise.Status.Resolved`.
+]=]
+--[=[
+	A Promise is an object that represents a value that will exist in the future, but doesn't right now.
+	Promises allow you to then attach callbacks that can run once the value becomes available (known as *resolving*),
+	or if an error has occurred (known as *rejecting*).
+
+	@class Promise
+	@__index prototype
+]=]
+local Promise = {
+	Error = Error,
+	Status = makeEnum("Promise.Status", { "Started", "Resolved", "Rejected", "Cancelled" }),
+	_getTime = os.clock,
+	_timeEvent = game:GetService("RunService").Heartbeat,
+	_unhandledRejectionCallbacks = {},
+}
+Promise.prototype = {}
+Promise.__index = Promise.prototype
+
+function Promise._new(traceback, callback, parent)
+	if parent ~= nil and not Promise.is(parent) then
+		error("Argument #2 to Promise.new must be a promise or nil", 2)
+	end
+
+	local self = {
+		-- The executor thread.
+		_thread = nil,
+
+		-- Used to locate where a promise was created
+		_source = traceback,
+
+		_status = Promise.Status.Started,
+
+		-- A table containing a list of all results, whether success or failure.
+		-- Only valid if _status is set to something besides Started
+		_values = nil,
+
+		-- Lua doesn't like sparse arrays very much, so we explicitly store the
+		-- length of _values to handle middle nils.
+		_valuesLength = -1,
+
+		-- Tracks if this Promise has no error observers..
+		_unhandledRejection = true,
+
+		-- Queues representing functions we should invoke when we update!
+		_queuedResolve = {},
+		_queuedReject = {},
+		_queuedFinally = {},
+
+		-- The function to run when/if this promise is cancelled.
+		_cancellationHook = nil,
+
+		-- The "parent" of this promise in a promise chain. Required for
+		-- cancellation propagation upstream.
+		_parent = parent,
+
+		-- Consumers are Promises that have chained onto this one.
+		-- We track them for cancellation propagation downstream.
+		_consumers = setmetatable({}, MODE_KEY_METATABLE),
+	}
+
+	if parent and parent._status == Promise.Status.Started then
+		parent._consumers[self] = true
+	end
+
+	setmetatable(self, Promise)
+
+	local function resolve(...)
+		self:_resolve(...)
+	end
+
+	local function reject(...)
+		self:_reject(...)
+	end
+
+	local function onCancel(cancellationHook)
+		if cancellationHook then
+			if self._status == Promise.Status.Cancelled then
+				cancellationHook()
+			else
+				self._cancellationHook = cancellationHook
+			end
+		end
+
+		return self._status == Promise.Status.Cancelled
+	end
+
+	self._thread = coroutine.create(function()
+		local ok, _, result = runExecutor(self._source, callback, resolve, reject, onCancel)
+
+		if not ok then
+			reject(result[1])
+		end
+	end)
+
+	task.spawn(self._thread)
+
+	return self
+end
+
+--[=[
+	Construct a new Promise that will be resolved or rejected with the given callbacks.
+
+	If you `resolve` with a Promise, it will be chained onto.
+
+	You can safely yield within the executor function and it will not block the creating thread.
+
+	```lua
+	local myFunction()
+		return Promise.new(function(resolve, reject, onCancel)
+			wait(1)
+			resolve("Hello world!")
+		end)
+	end
+
+	myFunction():andThen(print)
+	```
+
+	You do not need to use `pcall` within a Promise. Errors that occur during execution will be caught and turned into a rejection automatically. If `error()` is called with a table, that table will be the rejection value. Otherwise, string errors will be converted into `Promise.Error(Promise.Error.Kind.ExecutionError)` objects for tracking debug information.
+
+	You may register an optional cancellation hook by using the `onCancel` argument:
+
+	* This should be used to abort any ongoing operations leading up to the promise being settled.
+	* Call the `onCancel` function with a function callback as its only argument to set a hook which will in turn be called when/if the promise is cancelled.
+	* `onCancel` returns `true` if the Promise was already cancelled when you called `onCancel`.
+	* Calling `onCancel` with no argument will not override a previously set cancellation hook, but it will still return `true` if the Promise is currently cancelled.
+	* You can set the cancellation hook at any time before resolving.
+	* When a promise is cancelled, calls to `resolve` or `reject` will be ignored, regardless of if you set a cancellation hook or not.
+
+	:::caution
+	If the Promise is cancelled, the `executor` thread is closed with `coroutine.close` after the cancellation hook is called.
+
+	You must perform any cleanup code in the cancellation hook: any time your executor yields, it **may never resume**.
+	:::
+
+	@param executor (resolve: (...: any) -> (), reject: (...: any) -> (), onCancel: (abortHandler?: () -> ()) -> boolean) -> ()
+	@return Promise
+]=]
+function Promise.new(executor)
+	return Promise._new(debug.traceback(nil, 2), executor)
+end
+
+function Promise:__tostring()
+	return string.format("Promise(%s)", self._status)
+end
+
+--[=[
+	The same as [Promise.new](/api/Promise#new), except execution begins after the next `Heartbeat` event.
+
+	This is a spiritual replacement for `spawn`, but it does not suffer from the same [issues](https://eryn.io/gist/3db84579866c099cdd5bb2ff37947cec) as `spawn`.
+
+	```lua
+	local function waitForChild(instance, childName, timeout)
+	  return Promise.defer(function(resolve, reject)
+		local child = instance:WaitForChild(childName, timeout)
+
+		;(child and resolve or reject)(child)
+	  end)
+	end
+	```
+
+	@param executor (resolve: (...: any) -> (), reject: (...: any) -> (), onCancel: (abortHandler?: () -> ()) -> boolean) -> ()
+	@return Promise
+]=]
+function Promise.defer(executor)
+	local traceback = debug.traceback(nil, 2)
+	local promise
+	promise = Promise._new(traceback, function(resolve, reject, onCancel)
+		task.defer(function()
+			local ok, _, result = runExecutor(traceback, executor, resolve, reject, onCancel)
+
+			if not ok then
+				reject(result[1])
+			end
+		end)
+	end)
+
+	return promise
+end
+
+-- Backwards compatibility
+Promise.async = Promise.defer
+
+--[=[
+	Creates an immediately resolved Promise with the given value.
+
+	```lua
+	-- Example using Promise.resolve to deliver cached values:
+	function getSomething(name)
+		if cache[name] then
+			return Promise.resolve(cache[name])
+		else
+			return Promise.new(function(resolve, reject)
+				local thing = getTheThing()
+				cache[name] = thing
+
+				resolve(thing)
+			end)
+		end
+	end
+	```
+
+	@param ... any
+	@return Promise<...any>
+]=]
+function Promise.resolve(...)
+	local length, values = pack(...)
+	return Promise._new(debug.traceback(nil, 2), function(resolve)
+		resolve(unpack(values, 1, length))
+	end)
+end
+
+--[=[
+	Creates an immediately rejected Promise with the given value.
+
+	:::caution
+	Something needs to consume this rejection (i.e. `:catch()` it), otherwise it will emit an unhandled Promise rejection warning on the next frame. Thus, you should not create and store rejected Promises for later use. Only create them on-demand as needed.
+	:::
+
+	@param ... any
+	@return Promise<...any>
+]=]
+function Promise.reject(...)
+	local length, values = pack(...)
+	return Promise._new(debug.traceback(nil, 2), function(_, reject)
+		reject(unpack(values, 1, length))
+	end)
+end
+
+--[[
+	Runs a non-promise-returning function as a Promise with the
+  given arguments.
+]]
+function Promise._try(traceback, callback, ...)
+	local valuesLength, values = pack(...)
+
+	return Promise._new(traceback, function(resolve)
+		resolve(callback(unpack(values, 1, valuesLength)))
+	end)
+end
+
+--[=[
+	Begins a Promise chain, calling a function and returning a Promise resolving with its return value. If the function errors, the returned Promise will be rejected with the error. You can safely yield within the Promise.try callback.
+
+	:::info
+	`Promise.try` is similar to [Promise.promisify](#promisify), except the callback is invoked immediately instead of returning a new function.
+	:::
+
+	```lua
+	Promise.try(function()
+		return math.random(1, 2) == 1 and "ok" or error("Oh an error!")
+	end)
+		:andThen(function(text)
+			print(text)
+		end)
+		:catch(function(err)
+			warn("Something went wrong")
+		end)
+	```
+
+	@param callback (...: T...) -> ...any
+	@param ... T... -- Additional arguments passed to `callback`
+	@return Promise
+]=]
+function Promise.try(callback, ...)
+	return Promise._try(debug.traceback(nil, 2), callback, ...)
+end
+
+--[[
+	Returns a new promise that:
+		* is resolved when all input promises resolve
+		* is rejected if ANY input promises reject
+]]
+function Promise._all(traceback, promises, amount)
+	if type(promises) ~= "table" then
+		error(string.format(ERROR_NON_LIST, "Promise.all"), 3)
+	end
+
+	-- We need to check that each value is a promise here so that we can produce
+	-- a proper error rather than a rejected promise with our error.
+	for i, promise in pairs(promises) do
+		if not Promise.is(promise) then
+			error(string.format(ERROR_NON_PROMISE_IN_LIST, "Promise.all", tostring(i)), 3)
+		end
+	end
+
+	-- If there are no values then return an already resolved promise.
+	if #promises == 0 or amount == 0 then
+		return Promise.resolve({})
+	end
+
+	return Promise._new(traceback, function(resolve, reject, onCancel)
+		-- An array to contain our resolved values from the given promises.
+		local resolvedValues = {}
+		local newPromises = {}
+
+		-- Keep a count of resolved promises because just checking the resolved
+		-- values length wouldn't account for promises that resolve with nil.
+		local resolvedCount = 0
+		local rejectedCount = 0
+		local done = false
+
+		local function cancel()
+			for _, promise in ipairs(newPromises) do
+				promise:cancel()
+			end
+		end
+
+		-- Called when a single value is resolved and resolves if all are done.
+		local function resolveOne(i, ...)
+			if done then
+				return
+			end
+
+			resolvedCount = resolvedCount + 1
+
+			if amount == nil then
+				resolvedValues[i] = ...
+			else
+				resolvedValues[resolvedCount] = ...
+			end
+
+			if resolvedCount >= (amount or #promises) then
+				done = true
+				resolve(resolvedValues)
+				cancel()
+			end
+		end
+
+		onCancel(cancel)
+
+		-- We can assume the values inside `promises` are all promises since we
+		-- checked above.
+		for i, promise in ipairs(promises) do
+			newPromises[i] = promise:andThen(function(...)
+				resolveOne(i, ...)
+			end, function(...)
+				rejectedCount = rejectedCount + 1
+
+				if amount == nil or #promises - rejectedCount < amount then
+					cancel()
+					done = true
+
+					reject(...)
+				end
+			end)
+		end
+
+		if done then
+			cancel()
+		end
+	end)
+end
+
+--[=[
+	Accepts an array of Promises and returns a new promise that:
+	* is resolved after all input promises resolve.
+	* is rejected if *any* input promises reject.
+
+	:::info
+	Only the first return value from each promise will be present in the resulting array.
+	:::
+
+	After any input Promise rejects, all other input Promises that are still pending will be cancelled if they have no other consumers.
+
+	```lua
+	local promises = {
+		returnsAPromise("example 1"),
+		returnsAPromise("example 2"),
+		returnsAPromise("example 3"),
+	}
+
+	return Promise.all(promises)
+	```
+
+	@param promises {Promise<T>}
+	@return Promise<{T}>
+]=]
+function Promise.all(promises)
+	return Promise._all(debug.traceback(nil, 2), promises)
+end
+
+--[=[
+	Folds an array of values or promises into a single value. The array is traversed sequentially.
+
+	The reducer function can return a promise or value directly. Each iteration receives the resolved value from the previous, and the first receives your defined initial value.
+
+	The folding will stop at the first rejection encountered.
+	```lua
+	local basket = {"blueberry", "melon", "pear", "melon"}
+	Promise.fold(basket, function(cost, fruit)
+		if fruit == "blueberry" then
+			return cost -- blueberries are free!
+		else
+			-- call a function that returns a promise with the fruit price
+			return fetchPrice(fruit):andThen(function(fruitCost)
+				return cost + fruitCost
+			end)
+		end
+	end, 0)
+	```
+
+	@since v3.1.0
+	@param list {T | Promise<T>}
+	@param reducer (accumulator: U, value: T, index: number) -> U | Promise<U>
+	@param initialValue U
+]=]
+function Promise.fold(list, reducer, initialValue)
+	assert(type(list) == "table", "Bad argument #1 to Promise.fold: must be a table")
+	assert(isCallable(reducer), "Bad argument #2 to Promise.fold: must be a function")
+
+	local accumulator = Promise.resolve(initialValue)
+	return Promise.each(list, function(resolvedElement, i)
+		accumulator = accumulator:andThen(function(previousValueResolved)
+			return reducer(previousValueResolved, resolvedElement, i)
+		end)
+	end):andThen(function()
+		return accumulator
+	end)
+end
+
+--[=[
+	Accepts an array of Promises and returns a Promise that is resolved as soon as `count` Promises are resolved from the input array. The resolved array values are in the order that the Promises resolved in. When this Promise resolves, all other pending Promises are cancelled if they have no other consumers.
+
+	`count` 0 results in an empty array. The resultant array will never have more than `count` elements.
+
+	```lua
+	local promises = {
+		returnsAPromise("example 1"),
+		returnsAPromise("example 2"),
+		returnsAPromise("example 3"),
+	}
+
+	return Promise.some(promises, 2) -- Only resolves with first 2 promises to resolve
+	```
+
+	@param promises {Promise<T>}
+	@param count number
+	@return Promise<{T}>
+]=]
+function Promise.some(promises, count)
+	assert(type(count) == "number", "Bad argument #2 to Promise.some: must be a number")
+
+	return Promise._all(debug.traceback(nil, 2), promises, count)
+end
+
+--[=[
+	Accepts an array of Promises and returns a Promise that is resolved as soon as *any* of the input Promises resolves. It will reject only if *all* input Promises reject. As soon as one Promises resolves, all other pending Promises are cancelled if they have no other consumers.
+
+	Resolves directly with the value of the first resolved Promise. This is essentially [[Promise.some]] with `1` count, except the Promise resolves with the value directly instead of an array with one element.
+
+	```lua
+	local promises = {
+		returnsAPromise("example 1"),
+		returnsAPromise("example 2"),
+		returnsAPromise("example 3"),
+	}
+
+	return Promise.any(promises) -- Resolves with first value to resolve (only rejects if all 3 rejected)
+	```
+
+	@param promises {Promise<T>}
+	@return Promise<T>
+]=]
+function Promise.any(promises)
+	return Promise._all(debug.traceback(nil, 2), promises, 1):andThen(function(values)
+		return values[1]
+	end)
+end
+
+--[=[
+	Accepts an array of Promises and returns a new Promise that resolves with an array of in-place Statuses when all input Promises have settled. This is equivalent to mapping `promise:finally` over the array of Promises.
+
+	```lua
+	local promises = {
+		returnsAPromise("example 1"),
+		returnsAPromise("example 2"),
+		returnsAPromise("example 3"),
+	}
+
+	return Promise.allSettled(promises)
+	```
+
+	@param promises {Promise<T>}
+	@return Promise<{Status}>
+]=]
+function Promise.allSettled(promises)
+	if type(promises) ~= "table" then
+		error(string.format(ERROR_NON_LIST, "Promise.allSettled"), 2)
+	end
+
+	-- We need to check that each value is a promise here so that we can produce
+	-- a proper error rather than a rejected promise with our error.
+	for i, promise in pairs(promises) do
+		if not Promise.is(promise) then
+			error(string.format(ERROR_NON_PROMISE_IN_LIST, "Promise.allSettled", tostring(i)), 2)
+		end
+	end
+
+	-- If there are no values then return an already resolved promise.
+	if #promises == 0 then
+		return Promise.resolve({})
+	end
+
+	return Promise._new(debug.traceback(nil, 2), function(resolve, _, onCancel)
+		-- An array to contain our resolved values from the given promises.
+		local fates = {}
+		local newPromises = {}
+
+		-- Keep a count of resolved promises because just checking the resolved
+		-- values length wouldn't account for promises that resolve with nil.
+		local finishedCount = 0
+
+		-- Called when a single value is resolved and resolves if all are done.
+		local function resolveOne(i, ...)
+			finishedCount = finishedCount + 1
+
+			fates[i] = ...
+
+			if finishedCount >= #promises then
+				resolve(fates)
+			end
+		end
+
+		onCancel(function()
+			for _, promise in ipairs(newPromises) do
+				promise:cancel()
+			end
+		end)
+
+		-- We can assume the values inside `promises` are all promises since we
+		-- checked above.
+		for i, promise in ipairs(promises) do
+			newPromises[i] = promise:finally(function(...)
+				resolveOne(i, ...)
+			end)
+		end
+	end)
+end
+
+--[=[
+	Accepts an array of Promises and returns a new promise that is resolved or rejected as soon as any Promise in the array resolves or rejects.
+
+	:::warning
+	If the first Promise to settle from the array settles with a rejection, the resulting Promise from `race` will reject.
+
+	If you instead want to tolerate rejections, and only care about at least one Promise resolving, you should use [Promise.any](#any) or [Promise.some](#some) instead.
+	:::
+
+	All other Promises that don't win the race will be cancelled if they have no other consumers.
+
+	```lua
+	local promises = {
+		returnsAPromise("example 1"),
+		returnsAPromise("example 2"),
+		returnsAPromise("example 3"),
+	}
+
+	return Promise.race(promises) -- Only returns 1st value to resolve or reject
+	```
+
+	@param promises {Promise<T>}
+	@return Promise<T>
+]=]
+function Promise.race(promises)
+	assert(type(promises) == "table", string.format(ERROR_NON_LIST, "Promise.race"))
+
+	for i, promise in pairs(promises) do
+		assert(Promise.is(promise), string.format(ERROR_NON_PROMISE_IN_LIST, "Promise.race", tostring(i)))
+	end
+
+	return Promise._new(debug.traceback(nil, 2), function(resolve, reject, onCancel)
+		local newPromises = {}
+		local finished = false
+
+		local function cancel()
+			for _, promise in ipairs(newPromises) do
+				promise:cancel()
+			end
+		end
+
+		local function finalize(callback)
+			return function(...)
+				cancel()
+				finished = true
+				return callback(...)
+			end
+		end
+
+		if onCancel(finalize(reject)) then
+			return
+		end
+
+		for i, promise in ipairs(promises) do
+			newPromises[i] = promise:andThen(finalize(resolve), finalize(reject))
+		end
+
+		if finished then
+			cancel()
+		end
+	end)
+end
+
+--[=[
+	Iterates serially over the given an array of values, calling the predicate callback on each value before continuing.
+
+	If the predicate returns a Promise, we wait for that Promise to resolve before moving on to the next item
+	in the array.
+
+	:::info
+	`Promise.each` is similar to `Promise.all`, except the Promises are ran in order instead of all at once.
+
+	But because Promises are eager, by the time they are created, they're already running. Thus, we need a way to defer creation of each Promise until a later time.
+
+	The predicate function exists as a way for us to operate on our data instead of creating a new closure for each Promise. If you would prefer, you can pass in an array of functions, and in the predicate, call the function and return its return value.
+	:::
+
+	```lua
+	Promise.each({
+		"foo",
+		"bar",
+		"baz",
+		"qux"
+	}, function(value, index)
+		return Promise.delay(1):andThen(function()
+		print(("%d) Got %s!"):format(index, value))
+		end)
+	end)
+
+	--[[
+		(1 second passes)
+		> 1) Got foo!
+		(1 second passes)
+		> 2) Got bar!
+		(1 second passes)
+		> 3) Got baz!
+		(1 second passes)
+		> 4) Got qux!
+	]]
+	```
+
+	If the Promise a predicate returns rejects, the Promise from `Promise.each` is also rejected with the same value.
+
+	If the array of values contains a Promise, when we get to that point in the list, we wait for the Promise to resolve before calling the predicate with the value.
+
+	If a Promise in the array of values is already Rejected when `Promise.each` is called, `Promise.each` rejects with that value immediately (the predicate callback will never be called even once). If a Promise in the list is already Cancelled when `Promise.each` is called, `Promise.each` rejects with `Promise.Error(Promise.Error.Kind.AlreadyCancelled`). If a Promise in the array of values is Started at first, but later rejects, `Promise.each` will reject with that value and iteration will not continue once iteration encounters that value.
+
+	Returns a Promise containing an array of the returned/resolved values from the predicate for each item in the array of values.
+
+	If this Promise returned from `Promise.each` rejects or is cancelled for any reason, the following are true:
+	- Iteration will not continue.
+	- Any Promises within the array of values will now be cancelled if they have no other consumers.
+	- The Promise returned from the currently active predicate will be cancelled if it hasn't resolved yet.
+
+	@since 3.0.0
+	@param list {T | Promise<T>}
+	@param predicate (value: T, index: number) -> U | Promise<U>
+	@return Promise<{U}>
+]=]
+function Promise.each(list, predicate)
+	assert(type(list) == "table", string.format(ERROR_NON_LIST, "Promise.each"))
+	assert(isCallable(predicate), string.format(ERROR_NON_FUNCTION, "Promise.each"))
+
+	return Promise._new(debug.traceback(nil, 2), function(resolve, reject, onCancel)
+		local results = {}
+		local promisesToCancel = {}
+
+		local cancelled = false
+
+		local function cancel()
+			for _, promiseToCancel in ipairs(promisesToCancel) do
+				promiseToCancel:cancel()
+			end
+		end
+
+		onCancel(function()
+			cancelled = true
+
+			cancel()
+		end)
+
+		-- We need to preprocess the list of values and look for Promises.
+		-- If we find some, we must register our andThen calls now, so that those Promises have a consumer
+		-- from us registered. If we don't do this, those Promises might get cancelled by something else
+		-- before we get to them in the series because it's not possible to tell that we plan to use it
+		-- unless we indicate it here.
+
+		local preprocessedList = {}
+
+		for index, value in ipairs(list) do
+			if Promise.is(value) then
+				if value:getStatus() == Promise.Status.Cancelled then
+					cancel()
+					return reject(Error.new({
+						error = "Promise is cancelled",
+						kind = Error.Kind.AlreadyCancelled,
+						context = string.format(
+							"The Promise that was part of the array at index %d passed into Promise.each was already cancelled when Promise.each began.\n\nThat Promise was created at:\n\n%s",
+							index,
+							value._source
+						),
+					}))
+				elseif value:getStatus() == Promise.Status.Rejected then
+					cancel()
+					return reject(select(2, value:await()))
+				end
+
+				-- Chain a new Promise from this one so we only cancel ours
+				local ourPromise = value:andThen(function(...)
+					return ...
+				end)
+
+				table.insert(promisesToCancel, ourPromise)
+				preprocessedList[index] = ourPromise
+			else
+				preprocessedList[index] = value
+			end
+		end
+
+		for index, value in ipairs(preprocessedList) do
+			if Promise.is(value) then
+				local success
+				success, value = value:await()
+
+				if not success then
+					cancel()
+					return reject(value)
+				end
+			end
+
+			if cancelled then
+				return
+			end
+
+			local predicatePromise = Promise.resolve(predicate(value, index))
+
+			table.insert(promisesToCancel, predicatePromise)
+
+			local success, result = predicatePromise:await()
+
+			if not success then
+				cancel()
+				return reject(result)
+			end
+
+			results[index] = result
+		end
+
+		resolve(results)
+	end)
+end
+
+--[=[
+	Checks whether the given object is a Promise via duck typing. This only checks if the object is a table and has an `andThen` method.
+
+	@param object any
+	@return boolean -- `true` if the given `object` is a Promise.
+]=]
+function Promise.is(object)
+	if type(object) ~= "table" then
+		return false
+	end
+
+	local objectMetatable = getmetatable(object)
+
+	if objectMetatable == Promise then
+		-- The Promise came from this library.
+		return true
+	elseif objectMetatable == nil then
+		-- No metatable, but we should still chain onto tables with andThen methods
+		return isCallable(object.andThen)
+	elseif
+		type(objectMetatable) == "table"
+		and type(rawget(objectMetatable, "__index")) == "table"
+		and isCallable(rawget(rawget(objectMetatable, "__index"), "andThen"))
+	then
+		-- Maybe this came from a different or older Promise library.
+		return true
+	end
+
+	return false
+end
+
+--[=[
+	Wraps a function that yields into one that returns a Promise.
+
+	Any errors that occur while executing the function will be turned into rejections.
+
+	:::info
+	`Promise.promisify` is similar to [Promise.try](#try), except the callback is returned as a callable function instead of being invoked immediately.
+	:::
+
+	```lua
+	local sleep = Promise.promisify(wait)
+
+	sleep(1):andThen(print)
+	```
+
+	```lua
+	local isPlayerInGroup = Promise.promisify(function(player, groupId)
+		return player:IsInGroup(groupId)
+	end)
+	```
+
+	@param callback (...: any) -> ...any
+	@return (...: any) -> Promise
+]=]
+function Promise.promisify(callback)
+	return function(...)
+		return Promise._try(debug.traceback(nil, 2), callback, ...)
+	end
+end
+
+--[=[
+	Returns a Promise that resolves after `seconds` seconds have passed. The Promise resolves with the actual amount of time that was waited.
+
+	This function is a wrapper around `task.delay`.
+
+	:::warning
+	Passing NaN, +Infinity, -Infinity, 0, or any other number less than the duration of a Heartbeat will cause the promise to resolve on the very next Heartbeat.
+	:::
+
+	```lua
+		Promise.delay(5):andThenCall(print, "This prints after 5 seconds")
+	```
+
+	@function delay
+	@within Promise
+	@param seconds number
+	@return Promise<number>
+]=]
+function Promise.delay(seconds)
+	assert(type(seconds) == "number", "Bad argument #1 to Promise.delay, must be a number.")
+	local startTime = Promise._getTime()
+	return Promise._new(debug.traceback(nil, 2), function(resolve)
+		task.delay(seconds, function()
+			resolve(Promise._getTime() - startTime)
+		end)
+	end)
+end
+
+--[=[
+	Returns a new Promise that resolves if the chained Promise resolves within `seconds` seconds, or rejects if execution time exceeds `seconds`. The chained Promise will be cancelled if the timeout is reached.
+
+	Rejects with `rejectionValue` if it is non-nil. If a `rejectionValue` is not given, it will reject with a `Promise.Error(Promise.Error.Kind.TimedOut)`. This can be checked with [[Error.isKind]].
+
+	```lua
+	getSomething():timeout(5):andThen(function(something)
+		-- got something and it only took at max 5 seconds
+	end):catch(function(e)
+		-- Either getting something failed or the time was exceeded.
+
+		if Promise.Error.isKind(e, Promise.Error.Kind.TimedOut) then
+			warn("Operation timed out!")
+		else
+			warn("Operation encountered an error!")
+		end
+	end)
+	```
+
+	Sugar for:
+
+	```lua
+	Promise.race({
+		Promise.delay(seconds):andThen(function()
+			return Promise.reject(
+				rejectionValue == nil
+				and Promise.Error.new({ kind = Promise.Error.Kind.TimedOut })
+				or rejectionValue
+			)
+		end),
+		promise
+	})
+	```
+
+	@param seconds number
+	@param rejectionValue? any -- The value to reject with if the timeout is reached
+	@return Promise
+]=]
+function Promise.prototype:timeout(seconds, rejectionValue)
+	local traceback = debug.traceback(nil, 2)
+
+	return Promise.race({
+		Promise.delay(seconds):andThen(function()
+			return Promise.reject(rejectionValue == nil and Error.new({
+				kind = Error.Kind.TimedOut,
+				error = "Timed out",
+				context = string.format(
+					"Timeout of %d seconds exceeded.\n:timeout() called at:\n\n%s",
+					seconds,
+					traceback
+				),
+			}) or rejectionValue)
+		end),
+		self,
+	})
+end
+
+--[=[
+	Returns the current Promise status.
+
+	@return Status
+]=]
+function Promise.prototype:getStatus()
+	return self._status
+end
+
+--[[
+	Creates a new promise that receives the result of this promise.
+
+	The given callbacks are invoked depending on that result.
+]]
+function Promise.prototype:_andThen(traceback, successHandler, failureHandler)
+	self._unhandledRejection = false
+
+	-- If we are already cancelled, we return a cancelled Promise
+	if self._status == Promise.Status.Cancelled then
+		local promise = Promise.new(function() end)
+		promise:cancel()
+
+		return promise
+	end
+
+	-- Create a new promise to follow this part of the chain
+	return Promise._new(traceback, function(resolve, reject, onCancel)
+		-- Our default callbacks just pass values onto the next promise.
+		-- This lets success and failure cascade correctly!
+
+		local successCallback = resolve
+		if successHandler then
+			successCallback = createAdvancer(traceback, successHandler, resolve, reject)
+		end
+
+		local failureCallback = reject
+		if failureHandler then
+			failureCallback = createAdvancer(traceback, failureHandler, resolve, reject)
+		end
+
+		if self._status == Promise.Status.Started then
+			-- If we haven't resolved yet, put ourselves into the queue
+			table.insert(self._queuedResolve, successCallback)
+			table.insert(self._queuedReject, failureCallback)
+
+			onCancel(function()
+				-- These are guaranteed to exist because the cancellation handler is guaranteed to only
+				-- be called at most once
+				if self._status == Promise.Status.Started then
+					table.remove(self._queuedResolve, table.find(self._queuedResolve, successCallback))
+					table.remove(self._queuedReject, table.find(self._queuedReject, failureCallback))
+				end
+			end)
+		elseif self._status == Promise.Status.Resolved then
+			-- This promise has already resolved! Trigger success immediately.
+			successCallback(unpack(self._values, 1, self._valuesLength))
+		elseif self._status == Promise.Status.Rejected then
+			-- This promise died a terrible death! Trigger failure immediately.
+			failureCallback(unpack(self._values, 1, self._valuesLength))
+		end
+	end, self)
+end
+
+--[=[
+	Chains onto an existing Promise and returns a new Promise.
+
+	:::warning
+	Within the failure handler, you should never assume that the rejection value is a string. Some rejections within the Promise library are represented by [[Error]] objects. If you want to treat it as a string for debugging, you should call `tostring` on it first.
+	:::
+
+	You can return a Promise from the success or failure handler and it will be chained onto.
+
+	Calling `andThen` on a cancelled Promise returns a cancelled Promise.
+
+	:::tip
+	If the Promise returned by `andThen` is cancelled, `successHandler` and `failureHandler` will not run.
+
+	To run code no matter what, use [Promise:finally].
+	:::
+
+	@param successHandler (...: any) -> ...any
+	@param failureHandler? (...: any) -> ...any
+	@return Promise<...any>
+]=]
+function Promise.prototype:andThen(successHandler, failureHandler)
+	assert(successHandler == nil or isCallable(successHandler), string.format(ERROR_NON_FUNCTION, "Promise:andThen"))
+	assert(failureHandler == nil or isCallable(failureHandler), string.format(ERROR_NON_FUNCTION, "Promise:andThen"))
+
+	return self:_andThen(debug.traceback(nil, 2), successHandler, failureHandler)
+end
+
+--[=[
+	Shorthand for `Promise:andThen(nil, failureHandler)`.
+
+	Returns a Promise that resolves if the `failureHandler` worked without encountering an additional error.
+
+	:::warning
+	Within the failure handler, you should never assume that the rejection value is a string. Some rejections within the Promise library are represented by [[Error]] objects. If you want to treat it as a string for debugging, you should call `tostring` on it first.
+	:::
+
+	Calling `catch` on a cancelled Promise returns a cancelled Promise.
+
+	:::tip
+	If the Promise returned by `catch` is cancelled,  `failureHandler` will not run.
+
+	To run code no matter what, use [Promise:finally].
+	:::
+
+	@param failureHandler (...: any) -> ...any
+	@return Promise<...any>
+]=]
+function Promise.prototype:catch(failureHandler)
+	assert(failureHandler == nil or isCallable(failureHandler), string.format(ERROR_NON_FUNCTION, "Promise:catch"))
+	return self:_andThen(debug.traceback(nil, 2), nil, failureHandler)
+end
+
+--[=[
+	Similar to [Promise.andThen](#andThen), except the return value is the same as the value passed to the handler. In other words, you can insert a `:tap` into a Promise chain without affecting the value that downstream Promises receive.
+
+	```lua
+		getTheValue()
+		:tap(print)
+		:andThen(function(theValue)
+			print("Got", theValue, "even though print returns nil!")
+		end)
+	```
+
+	If you return a Promise from the tap handler callback, its value will be discarded but `tap` will still wait until it resolves before passing the original value through.
+
+	@param tapHandler (...: any) -> ...any
+	@return Promise<...any>
+]=]
+function Promise.prototype:tap(tapHandler)
+	assert(isCallable(tapHandler), string.format(ERROR_NON_FUNCTION, "Promise:tap"))
+	return self:_andThen(debug.traceback(nil, 2), function(...)
+		local callbackReturn = tapHandler(...)
+
+		if Promise.is(callbackReturn) then
+			local length, values = pack(...)
+			return callbackReturn:andThen(function()
+				return unpack(values, 1, length)
+			end)
+		end
+
+		return ...
+	end)
+end
+
+--[=[
+	Attaches an `andThen` handler to this Promise that calls the given callback with the predefined arguments. The resolved value is discarded.
+
+	```lua
+		promise:andThenCall(someFunction, "some", "arguments")
+	```
+
+	This is sugar for
+
+	```lua
+		promise:andThen(function()
+		return someFunction("some", "arguments")
+		end)
+	```
+
+	@param callback (...: any) -> any
+	@param ...? any -- Additional arguments which will be passed to `callback`
+	@return Promise
+]=]
+function Promise.prototype:andThenCall(callback, ...)
+	assert(isCallable(callback), string.format(ERROR_NON_FUNCTION, "Promise:andThenCall"))
+	local length, values = pack(...)
+	return self:_andThen(debug.traceback(nil, 2), function()
+		return callback(unpack(values, 1, length))
+	end)
+end
+
+--[=[
+	Attaches an `andThen` handler to this Promise that discards the resolved value and returns the given value from it.
+
+	```lua
+		promise:andThenReturn("some", "values")
+	```
+
+	This is sugar for
+
+	```lua
+		promise:andThen(function()
+			return "some", "values"
+		end)
+	```
+
+	:::caution
+	Promises are eager, so if you pass a Promise to `andThenReturn`, it will begin executing before `andThenReturn` is reached in the chain. Likewise, if you pass a Promise created from [[Promise.reject]] into `andThenReturn`, it's possible that this will trigger the unhandled rejection warning. If you need to return a Promise, it's usually best practice to use [[Promise.andThen]].
+	:::
+
+	@param ... any -- Values to return from the function
+	@return Promise
+]=]
+function Promise.prototype:andThenReturn(...)
+	local length, values = pack(...)
+	return self:_andThen(debug.traceback(nil, 2), function()
+		return unpack(values, 1, length)
+	end)
+end
+
+--[=[
+	Cancels this promise, preventing the promise from resolving or rejecting. Does not do anything if the promise is already settled.
+
+	Cancellations will propagate upwards and downwards through chained promises.
+
+	Promises will only be cancelled if all of their consumers are also cancelled. This is to say that if you call `andThen` twice on the same promise, and you cancel only one of the child promises, it will not cancel the parent promise until the other child promise is also cancelled.
+
+	```lua
+		promise:cancel()
+	```
+]=]
+function Promise.prototype:cancel()
+	if self._status ~= Promise.Status.Started then
+		return
+	end
+
+	self._status = Promise.Status.Cancelled
+
+	if self._cancellationHook then
+		self._cancellationHook()
+	end
+
+	coroutine.close(self._thread)
+
+	if self._parent then
+		self._parent:_consumerCancelled(self)
+	end
+
+	for child in pairs(self._consumers) do
+		child:cancel()
+	end
+
+	self:_finalize()
+end
+
+--[[
+	Used to decrease the number of consumers by 1, and if there are no more,
+	cancel this promise.
+]]
+function Promise.prototype:_consumerCancelled(consumer)
+	if self._status ~= Promise.Status.Started then
+		return
+	end
+
+	self._consumers[consumer] = nil
+
+	if next(self._consumers) == nil then
+		self:cancel()
+	end
+end
+
+--[[
+	Used to set a handler for when the promise resolves, rejects, or is
+	cancelled.
+]]
+function Promise.prototype:_finally(traceback, finallyHandler)
+	self._unhandledRejection = false
+
+	local promise = Promise._new(traceback, function(resolve, reject, onCancel)
+		local handlerPromise
+
+		onCancel(function()
+			-- The finally Promise is not a proper consumer of self. We don't care about the resolved value.
+			-- All we care about is running at the end. Therefore, if self has no other consumers, it's safe to
+			-- cancel. We don't need to hold out cancelling just because there's a finally handler.
+			self:_consumerCancelled(self)
+
+			if handlerPromise then
+				handlerPromise:cancel()
+			end
+		end)
+
+		local finallyCallback = resolve
+		if finallyHandler then
+			finallyCallback = function(...)
+				local ok, _, resultList = runExecutor(traceback, finallyHandler, ...)
+				local result = resultList[1]
+				if not ok then
+					return reject(result)
+				end
+
+				if Promise.is(result) then
+					handlerPromise = result
+
+					result
+						:finally(function(status)
+							if status ~= Promise.Status.Rejected then
+								resolve(self)
+							end
+						end)
+						:catch(function(...)
+							reject(...)
+						end)
+				else
+					resolve(self)
+				end
+			end
+		end
+
+		if self._status == Promise.Status.Started then
+			-- The promise is not settled, so queue this.
+			table.insert(self._queuedFinally, finallyCallback)
+		else
+			-- The promise already settled or was cancelled, run the callback now.
+			finallyCallback(self._status)
+		end
+	end)
+
+	return promise
+end
+
+--[=[
+	Set a handler that will be called regardless of the promise's fate. The handler is called when the promise is
+	resolved, rejected, *or* cancelled.
+
+	Returns a new Promise that:
+	- resolves with the same values that this Promise resolves with.
+	- rejects with the same values that this Promise rejects with.
+	- is cancelled if this Promise is cancelled.
+
+	If the value you return from the handler is a Promise:
+	- We wait for the Promise to resolve, but we ultimately discard the resolved value.
+	- If the returned Promise rejects, the Promise returned from `finally` will reject with the rejected value from the
+	*returned* promise.
+	- If the `finally` Promise is cancelled, and you returned a Promise from the handler, we cancel that Promise too.
+
+	Otherwise, the return value from the `finally` handler is entirely discarded.
+
+	:::note Cancellation
+	As of Promise v4, `Promise:finally` does not count as a consumer of the parent Promise for cancellation purposes.
+	This means that if all of a Promise's consumers are cancelled and the only remaining callbacks are finally handlers,
+	the Promise is cancelled and the finally callbacks run then and there.
+
+	Cancellation still propagates through the `finally` Promise though: if you cancel the `finally` Promise, it can cancel
+	its parent Promise if it had no other consumers. Likewise, if the parent Promise is cancelled, the `finally` Promise
+	will also be cancelled.
+	:::
+
+	```lua
+	local thing = createSomething()
+
+	doSomethingWith(thing)
+		:andThen(function()
+			print("It worked!")
+			-- do something..
+		end)
+		:catch(function()
+			warn("Oh no it failed!")
+		end)
+		:finally(function()
+			-- either way, destroy thing
+
+			thing:Destroy()
+		end)
+
+	```
+
+	@param finallyHandler (status: Status) -> ...any
+	@return Promise<...any>
+]=]
+function Promise.prototype:finally(finallyHandler)
+	assert(finallyHandler == nil or isCallable(finallyHandler), string.format(ERROR_NON_FUNCTION, "Promise:finally"))
+	return self:_finally(debug.traceback(nil, 2), finallyHandler)
+end
+
+--[=[
+	Same as `andThenCall`, except for `finally`.
+
+	Attaches a `finally` handler to this Promise that calls the given callback with the predefined arguments.
+
+	@param callback (...: any) -> any
+	@param ...? any -- Additional arguments which will be passed to `callback`
+	@return Promise
+]=]
+function Promise.prototype:finallyCall(callback, ...)
+	assert(isCallable(callback), string.format(ERROR_NON_FUNCTION, "Promise:finallyCall"))
+	local length, values = pack(...)
+	return self:_finally(debug.traceback(nil, 2), function()
+		return callback(unpack(values, 1, length))
+	end)
+end
+
+--[=[
+	Attaches a `finally` handler to this Promise that discards the resolved value and returns the given value from it.
+
+	```lua
+		promise:finallyReturn("some", "values")
+	```
+
+	This is sugar for
+
+	```lua
+		promise:finally(function()
+			return "some", "values"
+		end)
+	```
+
+	@param ... any -- Values to return from the function
+	@return Promise
+]=]
+function Promise.prototype:finallyReturn(...)
+	local length, values = pack(...)
+	return self:_finally(debug.traceback(nil, 2), function()
+		return unpack(values, 1, length)
+	end)
+end
+
+--[=[
+	Yields the current thread until the given Promise completes. Returns the Promise's status, followed by the values that the promise resolved or rejected with.
+
+	@yields
+	@return Status -- The Status representing the fate of the Promise
+	@return ...any -- The values the Promise resolved or rejected with.
+]=]
+function Promise.prototype:awaitStatus()
+	self._unhandledRejection = false
+
+	if self._status == Promise.Status.Started then
+		local thread = coroutine.running()
+
+		self
+			:finally(function()
+				task.spawn(thread)
+			end)
+			-- The finally promise can propagate rejections, so we attach a catch handler to prevent the unhandled
+			-- rejection warning from appearing
+			:catch(
+				function() end
+			)
+
+		coroutine.yield()
+	end
+
+	if self._status == Promise.Status.Resolved then
+		return self._status, unpack(self._values, 1, self._valuesLength)
+	elseif self._status == Promise.Status.Rejected then
+		return self._status, unpack(self._values, 1, self._valuesLength)
+	end
+
+	return self._status
+end
+
+local function awaitHelper(status, ...)
+	return status == Promise.Status.Resolved, ...
+end
+
+--[=[
+	Yields the current thread until the given Promise completes. Returns true if the Promise resolved, followed by the values that the promise resolved or rejected with.
+
+	:::caution
+	If the Promise gets cancelled, this function will return `false`, which is indistinguishable from a rejection. If you need to differentiate, you should use [[Promise.awaitStatus]] instead.
+	:::
+
+	```lua
+		local worked, value = getTheValue():await()
+
+	if worked then
+		print("got", value)
+	else
+		warn("it failed")
+	end
+	```
+
+	@yields
+	@return boolean -- `true` if the Promise successfully resolved
+	@return ...any -- The values the Promise resolved or rejected with.
+]=]
+function Promise.prototype:await()
+	return awaitHelper(self:awaitStatus())
+end
+
+local function expectHelper(status, ...)
+	if status ~= Promise.Status.Resolved then
+		error((...) == nil and "Expected Promise rejected with no value." or (...), 3)
+	end
+
+	return ...
+end
+
+--[=[
+	Yields the current thread until the given Promise completes. Returns the values that the promise resolved with.
+
+	```lua
+	local worked = pcall(function()
+		print("got", getTheValue():expect())
+	end)
+
+	if not worked then
+		warn("it failed")
+	end
+	```
+
+	This is essentially sugar for:
+
+	```lua
+	select(2, assert(promise:await()))
+	```
+
+	**Errors** if the Promise rejects or gets cancelled.
+
+	@error any -- Errors with the rejection value if this Promise rejects or gets cancelled.
+	@yields
+	@return ...any -- The values the Promise resolved with.
+]=]
+function Promise.prototype:expect()
+	return expectHelper(self:awaitStatus())
+end
+
+-- Backwards compatibility
+Promise.prototype.awaitValue = Promise.prototype.expect
+
+--[[
+	Intended for use in tests.
+
+	Similar to await(), but instead of yielding if the promise is unresolved,
+	_unwrap will throw. This indicates an assumption that a promise has
+	resolved.
+]]
+function Promise.prototype:_unwrap()
+	if self._status == Promise.Status.Started then
+		error("Promise has not resolved or rejected.", 2)
+	end
+
+	local success = self._status == Promise.Status.Resolved
+
+	return success, unpack(self._values, 1, self._valuesLength)
+end
+
+function Promise.prototype:_resolve(...)
+	if self._status ~= Promise.Status.Started then
+		if Promise.is((...)) then
+			(...):_consumerCancelled(self)
+		end
+		return
+	end
+
+	-- If the resolved value was a Promise, we chain onto it!
+	if Promise.is((...)) then
+		-- Without this warning, arguments sometimes mysteriously disappear
+		if select("#", ...) > 1 then
+			local message = string.format(
+				"When returning a Promise from andThen, extra arguments are " .. "discarded! See:\n\n%s",
+				self._source
+			)
+			warn(message)
+		end
+
+		local chainedPromise = ...
+
+		local promise = chainedPromise:andThen(function(...)
+			self:_resolve(...)
+		end, function(...)
+			local maybeRuntimeError = chainedPromise._values[1]
+
+			-- Backwards compatibility < v2
+			if chainedPromise._error then
+				maybeRuntimeError = Error.new({
+					error = chainedPromise._error,
+					kind = Error.Kind.ExecutionError,
+					context = "[No stack trace available as this Promise originated from an older version of the Promise library (< v2)]",
+				})
+			end
+
+			if Error.isKind(maybeRuntimeError, Error.Kind.ExecutionError) then
+				return self:_reject(maybeRuntimeError:extend({
+					error = "This Promise was chained to a Promise that errored.",
+					trace = "",
+					context = string.format(
+						"The Promise at:\n\n%s\n...Rejected because it was chained to the following Promise, which encountered an error:\n",
+						self._source
+					),
+				}))
+			end
+
+			self:_reject(...)
+		end)
+
+		if promise._status == Promise.Status.Cancelled then
+			self:cancel()
+		elseif promise._status == Promise.Status.Started then
+			-- Adopt ourselves into promise for cancellation propagation.
+			self._parent = promise
+			promise._consumers[self] = true
+		end
+
+		return
+	end
+
+	self._status = Promise.Status.Resolved
+	self._valuesLength, self._values = pack(...)
+
+	-- We assume that these callbacks will not throw errors.
+	for _, callback in ipairs(self._queuedResolve) do
+		coroutine.wrap(callback)(...)
+	end
+
+	self:_finalize()
+end
+
+function Promise.prototype:_reject(...)
+	if self._status ~= Promise.Status.Started then
+		return
+	end
+
+	self._status = Promise.Status.Rejected
+	self._valuesLength, self._values = pack(...)
+
+	-- If there are any rejection handlers, call those!
+	if not isEmpty(self._queuedReject) then
+		-- We assume that these callbacks will not throw errors.
+		for _, callback in ipairs(self._queuedReject) do
+			coroutine.wrap(callback)(...)
+		end
+	else
+		-- At this point, no one was able to observe the error.
+		-- An error handler might still be attached if the error occurred
+		-- synchronously. We'll wait one tick, and if there are still no
+		-- observers, then we should put a message in the console.
+
+		local err = tostring((...))
+
+		coroutine.wrap(function()
+			Promise._timeEvent:Wait()
+
+			-- Someone observed the error, hooray!
+			if not self._unhandledRejection then
+				return
+			end
+
+			-- Build a reasonable message
+			local message = string.format("Unhandled Promise rejection:\n\n%s\n\n%s", err, self._source)
+
+			for _, callback in ipairs(Promise._unhandledRejectionCallbacks) do
+				task.spawn(callback, self, unpack(self._values, 1, self._valuesLength))
+			end
+
+			if Promise.TEST then
+				-- Don't spam output when we're running tests.
+				return
+			end
+
+			warn(message)
+		end)()
+	end
+
+	self:_finalize()
+end
+
+--[[
+	Calls any :finally handlers. We need this to be a separate method and
+	queue because we must call all of the finally callbacks upon a success,
+	failure, *and* cancellation.
+]]
+function Promise.prototype:_finalize()
+	for _, callback in ipairs(self._queuedFinally) do
+		-- Purposefully not passing values to callbacks here, as it could be the
+		-- resolved values, or rejected errors. If the developer needs the values,
+		-- they should use :andThen or :catch explicitly.
+		coroutine.wrap(callback)(self._status)
+	end
+
+	self._queuedFinally = nil
+	self._queuedReject = nil
+	self._queuedResolve = nil
+
+	-- Clear references to other Promises to allow gc
+	if not Promise.TEST then
+		self._parent = nil
+		self._consumers = nil
+	end
+
+	task.defer(coroutine.close, self._thread)
+end
+
+--[=[
+	Chains a Promise from this one that is resolved if this Promise is already resolved, and rejected if it is not resolved at the time of calling `:now()`. This can be used to ensure your `andThen` handler occurs on the same frame as the root Promise execution.
+
+	```lua
+	doSomething()
+		:now()
+		:andThen(function(value)
+			print("Got", value, "synchronously.")
+		end)
+	```
+
+	If this Promise is still running, Rejected, or Cancelled, the Promise returned from `:now()` will reject with the `rejectionValue` if passed, otherwise with a `Promise.Error(Promise.Error.Kind.NotResolvedInTime)`. This can be checked with [[Error.isKind]].
+
+	@param rejectionValue? any -- The value to reject with if the Promise isn't resolved
+	@return Promise
+]=]
+function Promise.prototype:now(rejectionValue)
+	local traceback = debug.traceback(nil, 2)
+	if self._status == Promise.Status.Resolved then
+		return self:_andThen(traceback, function(...)
+			return ...
+		end)
+	else
+		return Promise.reject(rejectionValue == nil and Error.new({
+			kind = Error.Kind.NotResolvedInTime,
+			error = "This Promise was not resolved in time for :now()",
+			context = ":now() was called at:\n\n" .. traceback,
+		}) or rejectionValue)
+	end
+end
+
+--[=[
+	Repeatedly calls a Promise-returning function up to `times` number of times, until the returned Promise resolves.
+
+	If the amount of retries is exceeded, the function will return the latest rejected Promise.
+
+	```lua
+	local function canFail(a, b, c)
+		return Promise.new(function(resolve, reject)
+			-- do something that can fail
+
+			local failed, thing = doSomethingThatCanFail(a, b, c)
+
+			if failed then
+				reject("it failed")
+			else
+				resolve(thing)
+			end
+		end)
+	end
+
+	local MAX_RETRIES = 10
+	local value = Promise.retry(canFail, MAX_RETRIES, "foo", "bar", "baz") -- args to send to canFail
+	```
+
+	@since 3.0.0
+	@param callback (...: P) -> Promise<T>
+	@param times number
+	@param ...? P
+	@return Promise<T>
+]=]
+function Promise.retry(callback, times, ...)
+	assert(isCallable(callback), "Parameter #1 to Promise.retry must be a function")
+	assert(type(times) == "number", "Parameter #2 to Promise.retry must be a number")
+
+	local args, length = { ... }, select("#", ...)
+
+	return Promise.resolve(callback(...)):catch(function(...)
+		if times > 0 then
+			return Promise.retry(callback, times - 1, unpack(args, 1, length))
+		else
+			return Promise.reject(...)
+		end
+	end)
+end
+
+--[=[
+	Repeatedly calls a Promise-returning function up to `times` number of times, waiting `seconds` seconds between each
+	retry, until the returned Promise resolves.
+
+	If the amount of retries is exceeded, the function will return the latest rejected Promise.
+
+	@since v3.2.0
+	@param callback (...: P) -> Promise<T>
+	@param times number
+	@param seconds number
+	@param ...? P
+	@return Promise<T>
+]=]
+function Promise.retryWithDelay(callback, times, seconds, ...)
+	assert(isCallable(callback), "Parameter #1 to Promise.retry must be a function")
+	assert(type(times) == "number", "Parameter #2 (times) to Promise.retry must be a number")
+	assert(type(seconds) == "number", "Parameter #3 (seconds) to Promise.retry must be a number")
+
+	local args, length = { ... }, select("#", ...)
+
+	return Promise.resolve(callback(...)):catch(function(...)
+		if times > 0 then
+			Promise.delay(seconds):await()
+
+			return Promise.retryWithDelay(callback, times - 1, seconds, unpack(args, 1, length))
+		else
+			return Promise.reject(...)
+		end
+	end)
+end
+
+--[=[
+	Converts an event into a Promise which resolves the next time the event fires.
+
+	The optional `predicate` callback, if passed, will receive the event arguments and should return `true` or `false`, based on if this fired event should resolve the Promise or not. If `true`, the Promise resolves. If `false`, nothing happens and the predicate will be rerun the next time the event fires.
+
+	The Promise will resolve with the event arguments.
+
+	:::tip
+	This function will work given any object with a `Connect` method. This includes all Roblox events.
+	:::
+
+	```lua
+	-- Creates a Promise which only resolves when `somePart` is touched
+	-- by a part named `"Something specific"`.
+	return Promise.fromEvent(somePart.Touched, function(part)
+		return part.Name == "Something specific"
+	end)
+	```
+
+	@since 3.0.0
+	@param event Event -- Any object with a `Connect` method. This includes all Roblox events.
+	@param predicate? (...: P) -> boolean -- A function which determines if the Promise should resolve with the given value, or wait for the next event to check again.
+	@return Promise<P>
+]=]
+function Promise.fromEvent(event, predicate)
+	predicate = predicate or function()
+		return true
+	end
+
+	return Promise._new(debug.traceback(nil, 2), function(resolve, _, onCancel)
+		local connection
+		local shouldDisconnect = false
+
+		local function disconnect()
+			connection:Disconnect()
+			connection = nil
+		end
+
+		-- We use shouldDisconnect because if the callback given to Connect is called before
+		-- Connect returns, connection will still be nil. This happens with events that queue up
+		-- events when there's nothing connected, such as RemoteEvents
+
+		connection = event:Connect(function(...)
+			local callbackValue = predicate(...)
+
+			if callbackValue == true then
+				resolve(...)
+
+				if connection then
+					disconnect()
+				else
+					shouldDisconnect = true
+				end
+			elseif type(callbackValue) ~= "boolean" then
+				error("Promise.fromEvent predicate should always return a boolean")
+			end
+		end)
+
+		if shouldDisconnect and connection then
+			return disconnect()
+		end
+
+		onCancel(disconnect)
+	end)
+end
+
+--[=[
+	Registers a callback that runs when an unhandled rejection happens. An unhandled rejection happens when a Promise
+	is rejected, and the rejection is not observed with `:catch`.
+
+	The callback is called with the actual promise that rejected, followed by the rejection values.
+
+	@since v3.2.0
+	@param callback (promise: Promise, ...: any) -- A callback that runs when an unhandled rejection happens.
+	@return () -> () -- Function that unregisters the `callback` when called
+]=]
+function Promise.onUnhandledRejection(callback)
+	table.insert(Promise._unhandledRejectionCallbacks, callback)
+
+	return function()
+		local index = table.find(Promise._unhandledRejectionCallbacks, callback)
+
+		if index then
+			table.remove(Promise._unhandledRejectionCallbacks, index)
+		end
+	end
+end
+
+return Promise
+]==])
+local _8 = folder("_Patterns", _1)
+mod("Octree", _8, [[
+-- Facet
+-- _Patterns/Octree.luau
+-- Plinko Labs
+--
+-- Self-contained spatial index over a controller's candidate parts. Unlike
+-- workspace:GetPartBoundsInBox, it doesn't depend on CanQuery/CanCollide or the part actually
+-- living in workspace - anything inserted is queryable. Broad-phase only: Query() returns every
+-- part whose containing leaf could overlap a query sphere; callers run the exact geometric test
+-- (see VoxelController's _intersectsBox/_intersectsSphere/_intersectsRegion) on the result.
+-- Rebuilt per-Shatter from the controller's resolved candidates rather than kept permanently in
+-- sync with the DataModel - candidate sets are already small relative to a whole game, and
+-- rebuilding sidesteps having to track every candidate's live position.
+
+export type Node = {
+	Center: Vector3,
+	HalfSize: number,
+	Parts: { BasePart },
+	Children: { Node }?,
+}
+
+local MAX_PARTS_PER_NODE = 8
+local MIN_HALF_SIZE = 2
+
+local Octree = {}
+Octree.__index = Octree
+
+function Octree.new(center: Vector3, halfSize: number)
+	return setmetatable({
+		_root = { Center = center, HalfSize = halfSize, Parts = {}, Children = nil } :: Node,
+	}, Octree)
+end
+
+local function octantIndex(center: Vector3, point: Vector3): number
+	local index = 0
+	if point.X >= center.X then
+		index += 1
+	end
+	if point.Y >= center.Y then
+		index += 2
+	end
+	if point.Z >= center.Z then
+		index += 4
+	end
+	return index + 1
+end
+
+local function octantOffset(index: number): Vector3
+	index -= 1
+	local x = if bit32.band(index, 1) ~= 0 then 1 else -1
+	local y = if bit32.band(index, 2) ~= 0 then 1 else -1
+	local z = if bit32.band(index, 4) ~= 0 then 1 else -1
+	return Vector3.new(x, y, z)
+end
+
+local function split(node: Node)
+	local children = {}
+	local childHalf = node.HalfSize / 2
+	for i = 1, 8 do
+		local offset = octantOffset(i) * (childHalf / 2)
+		children[i] = { Center = node.Center + offset, HalfSize = childHalf, Parts = {}, Children = nil } :: Node
+	end
+	node.Children = children
+	local parts = node.Parts
+	node.Parts = {}
+	for _, part in parts do
+		local idx = octantIndex(node.Center, part.Position)
+		table.insert((children[idx] :: Node).Parts, part)
+	end
+end
+
+local function insert(node: Node, part: BasePart)
+	if node.Children then
+		local idx = octantIndex(node.Center, part.Position)
+		insert(node.Children[idx], part)
+		return
+	end
+	table.insert(node.Parts, part)
+	if #node.Parts > MAX_PARTS_PER_NODE and node.HalfSize > MIN_HALF_SIZE then
+		split(node)
+	end
+end
+
+function Octree:Insert(part: BasePart)
+	insert(self._root, part)
+end
+
+local function nodeIntersectsSphere(node: Node, center: Vector3, radius: number): boolean
+	local diff = node.Center - center
+	local nodeRadius = node.HalfSize * 1.7320508 -- sqrt(3): radius of the node's bounding sphere
+	return diff.Magnitude <= nodeRadius + radius
+end
+
+local function query(node: Node, center: Vector3, radius: number, results: { BasePart })
+	if not nodeIntersectsSphere(node, center, radius) then
+		return
+	end
+	if node.Children then
+		for _, child in node.Children do
+			query(child, center, radius, results)
+		end
+		return
+	end
+	for _, part in node.Parts do
+		table.insert(results, part)
+	end
+end
+
+-- Broad-phase: every part whose leaf could overlap a sphere of `radius` around `center`. Not
+-- an exact test on its own - callers narrow the result with a precise shape check.
+function Octree:Query(center: Vector3, radius: number): { BasePart }
 	local results = {}
-	local remaining = #jobs
+	query(self._root, center, radius, results)
+	return results
+end
+
+-- Builds a fresh tree sized to fit every given part, then inserts them all.
+function Octree.fromParts(parts: { BasePart })
+	local minP: Vector3? = nil
+	local maxP: Vector3? = nil
+	for _, part in parts do
+		local pos = part.Position
+		if not minP then
+			minP, maxP = pos, pos
+		else
+			minP = Vector3.new(math.min((minP :: Vector3).X, pos.X), math.min((minP :: Vector3).Y, pos.Y), math.min((minP :: Vector3).Z, pos.Z))
+			maxP = Vector3.new(math.max((maxP :: Vector3).X, pos.X), math.max((maxP :: Vector3).Y, pos.Y), math.max((maxP :: Vector3).Z, pos.Z))
+		end
+	end
+	minP = minP or Vector3.zero
+	maxP = maxP or Vector3.zero
+
+	local center = ((minP :: Vector3) + (maxP :: Vector3)) / 2
+	local halfSize = math.max(((maxP :: Vector3) - (minP :: Vector3)).Magnitude / 2, 4)
+
+	local octree = Octree.new(center, halfSize)
+	for _, part in parts do
+		octree:Insert(part)
+	end
+	return octree
+end
+
+return Octree
+]])
+mod("Pool", _8, [[
+-- Facet
+-- _Patterns/Pool.luau
+-- Plinko Labs
+--
+-- A tiny Part object pool VoxelController draws from when Config.ObjectPooling is true - reused
+-- across Shatter calls instead of Instance.new/Destroy every voxel. Parked parts sit disabled
+-- under workspace._Bin.Pool until reacquired. Internal - not part of the public API surface
+-- (no @class tag, same as Octree.luau).
+
+local stack: { Part } = {}
+
+local function container(): Folder
+	local bin = workspace:FindFirstChild("_Bin")
+	if not bin then
+		bin = Instance.new("Folder")
+		bin.Name = "_Bin"
+		bin.Parent = workspace
+	end
+	local pool = bin:FindFirstChild("Pool")
+	if not pool then
+		pool = Instance.new("Folder")
+		pool.Name = "Pool"
+		pool.Parent = bin
+	end
+	return pool :: Folder
+end
+
+local function acquire(): Part
+	local part = table.remove(stack)
+	if part then
+		return part
+	end
+	return Instance.new("Part")
+end
+
+local function release(part: Part)
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.Parent = container()
+	table.insert(stack, part)
+end
+
+return {
+	acquire = acquire,
+	release = release,
+}
+]])
+mod("Thread", _8, [[
+-- Facet
+-- _Patterns/Thread.luau
+-- Plinko Labs
+--
+-- Generic Actor-pool pattern: clones a context-baked Script/LocalScript template into `Size`
+-- Actors, waits for every one of them to confirm it's actually bound and listening, then
+-- dispatches named messages across the pool round-robin and collects replies in call order.
+-- Not Facet-specific - anything that needs a small pool of Actors running the same worker
+-- logic can use this instead of hand-rolling pool/Ready/SendMessage bookkeeping.
+--
+-- RunContext (Server/Client) can only be set on `template` from Studio/Plugin capability, never
+-- from a live game script - this pattern doesn't fight that, it just clones whatever template
+-- it's handed. Callers own picking the right pre-baked template for the calling realm.
+--
+-- NOTE: this can't be exercised by `lune run` - headless Lune has no Actor/parallel Luau support
+-- at all, so this module has only been verified by reading against the documented
+-- Actor/SendMessage/BindToMessageParallel APIs, not by an actual Studio run.
+
+local DEFAULT_SIZE = 4
+
+-- How long to wait for every worker in a freshly built pool to report Ready before giving up.
+-- Each worker only needs to run its own top-level script body once - if it hasn't managed that
+-- in 5 seconds something is genuinely wrong (not just a slow frame), so this isn't tuned to be
+-- tight against normal startup time.
+local DEFAULT_READY_TIMEOUT = 5
+
+--[=[
+	@class Thread
+	A small pool of Actors all running a clone of the same template, dispatched to round-robin.
+	Build one with [Thread.new]; nothing else here is meant to be called directly.
+]=]
+export type Thread = {
+	Map: (self: Thread, message: string, argsList: { { any } }) -> { any },
+	Destroy: (self: Thread) -> (),
+}
+
+local Thread = {}
+Thread.__index = Thread
+
+--[=[
+	@within Thread
+	Builds a pool of `size` Actors (default 4), each running a clone of `template` parented
+	under `parent`. Blocks (up to `readyTimeout` seconds, default 5) until every worker fires its
+	own "Ready" BindableEvent, since a freshly parented Script/LocalScript doesn't start running
+	the instant it's cloned in - it resumes on a later tick, after this call would otherwise have
+	already returned. Returns `nil` instead of throwing if any worker fails to start in time, so
+	callers can fall back to running work inline rather than crashing.
+]=]
+function Thread.new(template: Script | LocalScript, parent: Instance, size: number?, readyTimeout: number?): Thread?
+	local poolSize = size or DEFAULT_SIZE
+	local ok, result = pcall(function()
+		local actors: { Actor } = {}
+		local readyEvents: { BindableEvent } = {}
+		for i = 1, poolSize do
+			local actor = Instance.new("Actor")
+			actor.Name = template.Name .. i
+
+			local worker = template:Clone()
+			local ready = Instance.new("BindableEvent")
+			ready.Name = "Ready"
+			ready.Parent = worker
+
+			worker.Enabled = true
+			worker.Parent = actor
+			actor.Parent = parent
+
+			actors[i] = actor
+			readyEvents[i] = ready
+		end
+
+		local timeout = readyTimeout or DEFAULT_READY_TIMEOUT
+		for _, ready in readyEvents do
+			local fired = false
+			local connection = ready.Event:Once(function()
+				fired = true
+			end)
+			local deadline = os.clock() + timeout
+			while not fired and os.clock() < deadline do
+				task.wait()
+			end
+			connection:Disconnect()
+			ready:Destroy()
+			assert(fired, "Thread: a worker never signaled Ready in time")
+		end
+
+		return actors
+	end)
+	if not ok then
+		warn("[Facet] Thread pool failed to start: " .. tostring(result))
+		return nil
+	end
+
+	return setmetatable({ _actors = result :: { Actor }, _next = 1 }, Thread) :: any
+end
+
+--[=[
+	@within Thread
+	Dispatches one `message` per entry in `argsList` across the pool round-robin and returns the
+	single-value replies in the same order `argsList` was given (not the order replies actually
+	arrive in). Each worker is expected to `SendMessage`-style reply by firing the `BindableEvent`
+	it's handed as the first extra argument with exactly one value.
+]=]
+function Thread:Map(message: string, argsList: { { any } }): { any }
+	local actors = (self :: any)._actors :: { Actor }
+	local results = {}
+	local remaining = #argsList
 	if remaining == 0 then
 		return results
 	end
 
 	local done = Instance.new("BindableEvent")
-	for i, job in jobs do
-		local actor = actors[(i - 1) % #actors + 1]
+	for i, args in argsList do
+		local actor = actors[(self :: any)._next]
+		;(self :: any)._next = ((self :: any)._next % #actors) + 1
 		local reply = Instance.new("BindableEvent")
-		reply.Event:Once(function(cells)
-			results[i] = cells
+		reply.Event:Once(function(value)
+			results[i] = value
 			remaining -= 1
 			reply:Destroy()
 			if remaining == 0 then
 				done:Fire()
 			end
 		end)
-		actor:SendMessage("ComputeCells", reply, job.Grid, job.Hitbox, job.GreedyMeshing)
+		actor:SendMessage(message, reply, table.unpack(args))
 	end
 
 	if remaining > 0 then
@@ -2029,100 +4183,19 @@ function Workers.computeAsync(jobs: { Job }): { { Voxelize.MergedVoxel } }
 	return results
 end
 
-return Workers
+--[=[
+	@within Thread
+	Destroys every Actor in the pool. The pool isn't reusable after this.
+]=]
+function Thread:Destroy()
+	for _, actor in (self :: any)._actors :: { Actor } do
+		actor:Destroy()
+	end
+	(self :: any)._actors = {}
+end
+
+return Thread
 ]])
-inst("Script", "Worker", _4, [[
--- Facet
--- VoxelController/Workers/Worker.server.luau
--- Plinko Labs
---
--- Cloned into a fresh Actor by Workers.computeAsync() and run with RunContext forced to match
--- whichever realm called Shatter (it's parented under ReplicatedStorage, where a Legacy-context
--- Script would never run on its own). Binds in parallel: BindToMessageParallel hands this
--- function its own desynchronized thread per message, so jobs for different Actors genuinely
--- run at the same time. Touches no Instance except the `reply` BindableEvent it's handed, and
--- only after resynchronizing - everything in between is Voxelize, which is pure.
---
--- script.Parent is the Actor (e.g. FacetWorker1) Workers.computeAsync() parents this under, so
--- Voxelize lives three levels up: Worker -> Actor -> Workers -> VoxelController.
 
-local Voxelize = require(script.Parent.Parent.Parent.Voxelize)
-
-local actor = script:GetActor()
-assert(actor, "Worker.server.luau must run inside an Actor")
-
-actor:BindToMessageParallel("ComputeCells", function(reply: BindableEvent, grid: Voxelize.Grid, hitbox: Voxelize.PointHitbox?, greedyMeshing: boolean?)
-	local classify = if hitbox
-		then function(pos: Vector3)
-			return Voxelize.classifyPoint(pos, hitbox)
-		end
-		else function()
-			return "Partial"
-		end
-
-	local cells = Voxelize.computeCells(grid, classify, greedyMeshing)
-
-	task.synchronize()
-	reply:Fire(cells)
-end)
-
--- A freshly cloned/parented Script doesn't start running the instant Workers.computeAsync()
--- sets worker.Parent = actor - it begins on a later resumption, after the call that builds the
--- pool has already returned. Without this, the very first SendMessage to a brand new pool can
--- arrive before BindToMessageParallel above has even run, gets silently dropped, and the caller
--- hangs forever on done.Event:Wait() with no reply ever coming back. Firing Ready here, right
--- after binding, lets buildPool() confirm every worker is actually listening before it's used.
-local ready = script:FindFirstChild("Ready")
-if ready then
-	(ready :: BindableEvent):Fire()
-end
-]], "Server")
-inst("Script", "WorkerClient", _4, [[
--- Facet
--- VoxelController/Workers/Worker.server.luau
--- Plinko Labs
---
--- Cloned into a fresh Actor by Workers.computeAsync() and run with RunContext forced to match
--- whichever realm called Shatter (it's parented under ReplicatedStorage, where a Legacy-context
--- Script would never run on its own). Binds in parallel: BindToMessageParallel hands this
--- function its own desynchronized thread per message, so jobs for different Actors genuinely
--- run at the same time. Touches no Instance except the `reply` BindableEvent it's handed, and
--- only after resynchronizing - everything in between is Voxelize, which is pure.
---
--- script.Parent is the Actor (e.g. FacetWorker1) Workers.computeAsync() parents this under, so
--- Voxelize lives three levels up: Worker -> Actor -> Workers -> VoxelController.
-
-local Voxelize = require(script.Parent.Parent.Parent.Voxelize)
-
-local actor = script:GetActor()
-assert(actor, "Worker.server.luau must run inside an Actor")
-
-actor:BindToMessageParallel("ComputeCells", function(reply: BindableEvent, grid: Voxelize.Grid, hitbox: Voxelize.PointHitbox?, greedyMeshing: boolean?)
-	local classify = if hitbox
-		then function(pos: Vector3)
-			return Voxelize.classifyPoint(pos, hitbox)
-		end
-		else function()
-			return "Partial"
-		end
-
-	local cells = Voxelize.computeCells(grid, classify, greedyMeshing)
-
-	task.synchronize()
-	reply:Fire(cells)
-end)
-
--- A freshly cloned/parented Script doesn't start running the instant Workers.computeAsync()
--- sets worker.Parent = actor - it begins on a later resumption, after the call that builds the
--- pool has already returned. Without this, the very first SendMessage to a brand new pool can
--- arrive before BindToMessageParallel above has even run, gets silently dropped, and the caller
--- hangs forever on done.Event:Wait() with no reply ever coming back. Firing Ready here, right
--- after binding, lets buildPool() confirm every worker is actually listening before it's used.
-local ready = script:FindFirstChild("Ready")
-if ready then
-	(ready :: BindableEvent):Fire()
-end
-]], "Client")
-
-print("[Facet] installed 12 modules under ReplicatedStorage.Facet")
+print("[Facet] installed 16 modules under ReplicatedStorage.Facet")
 return true

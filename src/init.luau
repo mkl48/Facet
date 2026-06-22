@@ -5,17 +5,17 @@
 -- (fixed voxel size) - and that controller's :Shatter() is the one verb everything else
 -- (Hitbox detection, Effects, Cleanup, Result chaining) hangs off of.
 --
--- See VoxelController/init.luau for the Shatter pipeline and Enums/init.luau for every
--- enum referenced in configs below.
+-- See _Classes/VoxelController/init.luau for the Shatter pipeline and _Core/Enums.luau for
+-- every enum referenced in configs below.
 
 --[=[
 	@class Facet
 ]=]
 
-local VoxelController = require(script.VoxelController)
-local PendingResult = require(script.VoxelController.PendingResult)
-local Enums = require(script.Enums)
-local ConfigModule = require(script.Config)
+local VoxelController = require(script._Classes.VoxelController)
+local PendingResult = require(script._Classes.VoxelController.PendingResult)
+local Enums = require(script._Core.Enums)
+local ConfigModule = require(script._Core.Config)
 
 local Facet = {}
 

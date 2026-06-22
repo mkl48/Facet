@@ -70,14 +70,13 @@ Combine it with `Explode`/`Slice` for a more dramatic initial kick before gravit
 just expect the welded pieces to settle into one shared velocity almost immediately, since
 they're rigidly connected.
 
-Every Chunk piece is also put into a shared `CollisionGroup` ("Facet_Chunk") that's non-collidable
-with itself - the voxel grid produces pieces that touch exactly at shared faces, and without this,
-the physics engine treats that contact as an overlap and fires a separating impulse the instant
-the weld is created, which spikes velocity past `BreakSpeed` (no matter how high you set it) and
-shatters the assembly before it ever falls. Impact detection still works because that's driven by
-`Touched` (which only needs `CanTouch`, not collision) against whatever the assembly actually
-lands on - which stays in the normal `Default` group, so it still collides with and triggers
-`Touched` on the falling assembly.
+Chunk pieces keep colliding with each other - nothing turns that off. A `Touched` against another
+piece from the *same* assembly never counts toward `BreakSpeed`, only a `Touched` against
+something outside it does, so an assembly resting against its own geometry (which is constant,
+since the voxel grid is wall-to-wall touching pieces) never reads as a hit. The first half-second
+after a Chunk assembly is created is also ignored entirely, so the physics engine settling the
+freshly welded geometry into place can't be mistaken for an impact either - between those two,
+`BreakSpeed` only ever fires from a genuine outside collision.
 
 ### `Slice = { Normal: Vector3?, Speed: number? }`
 

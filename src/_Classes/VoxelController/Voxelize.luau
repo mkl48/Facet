@@ -1,5 +1,5 @@
 -- Facet
--- VoxelController/Voxelize.luau
+-- _Classes/VoxelController/Voxelize.luau
 -- Plinko Labs
 --
 -- Slices one BasePart into an axis-aligned grid of same-size cubes at the part's own

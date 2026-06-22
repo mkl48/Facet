@@ -1,5 +1,5 @@
 -- Facet
--- Config.luau
+-- _Core/Config.luau
 -- Plinko Labs
 --
 -- Global, process-wide feature flags every VoxelController/Voxel reads directly - call
@@ -7,8 +7,8 @@
 -- Multithreading/GreedyMeshing/ObjectPooling are all read on the calling thread, before any
 -- Actor work starts - none of this table is ever shared INTO a desynchronized Actor as live
 -- state. GreedyMeshing crosses that boundary as a plain field on the Job instead (see
--- VoxelController/Workers/init.luau) since requiring this module from inside an Actor would get
--- its own independent copy, not the one Facet.Configure just changed.
+-- _Classes/VoxelController/Workers/init.luau) since requiring this module from inside an Actor
+-- would get its own independent copy, not the one Facet.Configure just changed.
 
 --[=[
 	@class Config

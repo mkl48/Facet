@@ -1,5 +1,5 @@
 -- Facet
--- VoxelController/init.luau
+-- _Classes/VoxelController/init.luau
 -- Plinko Labs
 --
 -- Returned by Facet.Define(). Owns one Shatter pipeline: resolve candidate parts -> (optionally)
@@ -13,41 +13,19 @@
 -- per-part grid classification + greedy meshing across an Actor pool when a call touches more
 -- than one part - see Workers/init.luau and _voxelizeBatch below.
 
-local Enums = require(script.Parent.Enums)
+local Enums = require(script.Parent.Parent._Core.Enums)
 local PendingResult = require(script.PendingResult)
 local VoxelModule = require(script.Voxel)
 local Voxelize = require(script.Voxelize)
-local Octree = require(script.Octree)
+local Octree = require(script.Parent.Parent._Patterns.Octree)
 local Workers = require(script.Workers)
-local ConfigModule = require(script.Parent.Config)
-local Pool = require(script.Parent.Pool)
+local ConfigModule = require(script.Parent.Parent._Core.Config)
+local Pool = require(script.Parent.Parent._Patterns.Pool)
 
 local Config = ConfigModule.Config
 
 local Voxel = VoxelModule.new
 local applyEffects = VoxelModule.applyEffects
-
--- Every Chunk assembly's pieces share this one CollisionGroup, set non-collidable with itself.
--- The voxel grid produces pieces that touch exactly at shared faces - without this, the moment
--- they're unanchored and welded together, the physics solver treats that contact as an overlap
--- and fires a separating impulse, which spikes AssemblyLinearVelocity past any BreakSpeed
--- threshold (no matter how high) before gravity ever gets a chance to make the assembly fall as
--- one piece. Registered once and reused for every Chunk call, not per-call - one of the engine's
--- 32 collision group slots, permanently. CanTouch stays true (set in _emitCells) so impact
--- detection against the world (still in the normal `Default` group) keeps working.
-local CHUNK_COLLISION_GROUP = "Facet_Chunk"
-local chunkCollisionGroupReady = false
-local function ensureChunkCollisionGroup()
-	if chunkCollisionGroupReady then
-		return
-	end
-	local PhysicsService = game:GetService("PhysicsService")
-	if not PhysicsService:IsCollisionGroupRegistered(CHUNK_COLLISION_GROUP) then
-		PhysicsService:RegisterCollisionGroup(CHUNK_COLLISION_GROUP)
-	end
-	PhysicsService:CollisionGroupSetCollidable(CHUNK_COLLISION_GROUP, CHUNK_COLLISION_GROUP, false)
-	chunkCollisionGroupReady = true
-end
 
 -- Every voxel produced from slicing a part lands under workspace._Bin.Voxels.<PartName>,
 -- grouped by the original part's Name, instead of back into wherever the part used to live -
@@ -396,6 +374,14 @@ end
 -- its own disconnected chunk. A weld breaks - detaching that piece and everything within
 -- BreakRadius of it - the moment its relative impact speed reaches BreakSpeed, so a hard enough
 -- landing fractures the assembly into smaller chunks instead of staying one rigid lump forever.
+--
+-- Pieces keep colliding with each other (no CollisionGroup trick) - which means the moment
+-- they're unanchored, touching grid-adjacent siblings register as Touched too. Those don't count
+-- as "load": only a Touched against something outside the assembly can trigger a break, and even
+-- those are ignored for a brief CHUNK_GRACE_PERIOD right after creation, so the physics solver
+-- settling the freshly welded geometry into place doesn't read as a hit.
+local CHUNK_GRACE_PERIOD = 0.5
+
 function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { VoxelModule.Voxel }, chunkConfig: any)
 	local settings = if type(chunkConfig) == "table" then chunkConfig else {}
 	local breakSpeed = settings.BreakSpeed or 40
@@ -408,10 +394,10 @@ function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { Vox
 	for _, voxel in extra do
 		table.insert(pieces, voxel.Instance)
 	end
-	ensureChunkCollisionGroup()
+	local pieceSet: { [BasePart]: boolean } = {}
 	for _, piece in pieces do
 		piece.Anchored = false
-		piece.CollisionGroup = CHUNK_COLLISION_GROUP
+		pieceSet[piece] = true
 	end
 	if #pieces < 2 then
 		return
@@ -430,6 +416,7 @@ function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { Vox
 
 	local connections: { RBXScriptConnection } = {}
 	local remaining = #pieces - 1
+	local createdAt = os.clock()
 
 	local function detachNear(position: Vector3)
 		for piece, weld in welds do
@@ -451,7 +438,15 @@ function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { Vox
 		table.insert(
 			connections,
 			piece.Touched:Connect(function(other: BasePart)
+				-- A sibling brushing against another sibling isn't a load - it's the assembly's
+				-- own geometry resting against itself. Only something outside the assembly counts.
+				if pieceSet[other] then
+					return
+				end
 				local now = os.clock()
+				if now - createdAt < CHUNK_GRACE_PERIOD then
+					return
+				end
 				if (lastCheck[piece] or 0) + 0.1 > now then
 					return
 				end

@@ -1,5 +1,5 @@
 -- Facet
--- VoxelController/PendingResult.luau
+-- _Classes/VoxelController/PendingResult.luau
 -- Plinko Labs
 --
 -- The chain object Shatter returns: Controller:Shatter(...):Next(Enums.Event.X):Then(cb).
@@ -7,7 +7,7 @@
 -- listeners registered after a past event has already fired never run for that firing
 -- (each PendingResult only lives for one Shatter call).
 
-local Enums = require(script.Parent.Parent.Enums)
+local Enums = require(script.Parent.Parent.Parent._Core.Enums)
 local VoxelModule = require(script.Parent.Voxel)
 
 export type Voxel = VoxelModule.Voxel

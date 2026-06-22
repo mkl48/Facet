@@ -1,5 +1,5 @@
 -- Facet
--- Pool.luau
+-- _Patterns/Pool.luau
 -- Plinko Labs
 --
 -- A tiny Part object pool VoxelController draws from when Config.ObjectPooling is true - reused

@@ -1,5 +1,5 @@
 -- Facet
--- VoxelController/Octree.luau
+-- _Patterns/Octree.luau
 -- Plinko Labs
 --
 -- Self-contained spatial index over a controller's candidate parts. Unlike

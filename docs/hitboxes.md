@@ -21,7 +21,7 @@ Wall:Shatter({
 ## How detection works
 
 Every candidate part under the target gets indexed into a broad-phase octree built fresh for
-that one call (`src/VoxelController/Octree.luau`). The octree narrows candidates down by
+that one call (`src/_Patterns/Octree.luau`). The octree narrows candidates down by
 bounding sphere; an exact geometric test then runs on whatever it returns, picked by
 `QueryType`:
 

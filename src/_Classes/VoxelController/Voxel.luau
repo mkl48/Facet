@@ -1,5 +1,5 @@
 -- Facet
--- VoxelController/Voxel.luau
+-- _Classes/VoxelController/Voxel.luau
 -- Plinko Labs
 --
 -- Wraps one produced BasePart with the extra behaviour Result.Voxels entries carry: a
@@ -8,9 +8,9 @@
 -- only accepts Effects/Size - there's no hitbox left to detect against, the part IS the target.
 
 local TweenService = game:GetService("TweenService")
-local Enums = require(script.Parent.Parent.Enums)
-local ConfigModule = require(script.Parent.Parent.Config)
-local Pool = require(script.Parent.Parent.Pool)
+local Enums = require(script.Parent.Parent.Parent._Core.Enums)
+local ConfigModule = require(script.Parent.Parent.Parent._Core.Config)
+local Pool = require(script.Parent.Parent.Parent._Patterns.Pool)
 
 local Config = ConfigModule.Config
 

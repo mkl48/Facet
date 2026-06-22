@@ -28,7 +28,7 @@ destroy, or your own function), and a `Result` you can chain off of with `:Next(
 > over the candidate parts, and Actor-based multithreading for Relative controllers. All four
 > `QueryType`s are wired up (`Box`/`Sphere`/`Region` through the octree + an exact shape test,
 > `Raycast` straight through the engine - single closest hit, no multi-hit walk yet). The Actor
-> pool (see [`src/VoxelController/Workers`](src/VoxelController/Workers)) is built against the
+> pool (see [`src/_Classes/VoxelController/Workers`](src/_Classes/VoxelController/Workers)) is built against the
 > documented `Actor`/`SendMessage`/`BindToMessageParallel` APIs but hasn't been run against a
 > real Studio session yet - it falls back to single-threaded voxelization automatically if the
 > pool fails to start, so a surprise there costs speed, not correctness, but treat it as
@@ -50,11 +50,11 @@ destroy, or your own function), and a `Result` you can chain off of with `:Next(
   grid cell. Cells you're meant to see fragment (`Partial`, or a no-hitbox `Shatter`) stay one
   piece per cell.
 - **Octree-backed spatial queries** - candidate parts are indexed in a broad-phase octree
-  (`src/VoxelController/Octree.luau`) before the exact shape test runs, so detection doesn't
+  (`src/_Patterns/Octree.luau`) before the exact shape test runs, so detection doesn't
   depend on `CanQuery`/`CanCollide` or the part living in `workspace`.
 - **Multithreaded slicing for Relative controllers** - when a `Shatter` call touches more than
   one part, each part's grid classification + greedy meshing runs on its own desynchronized
-  Actor (`src/VoxelController/Workers`) instead of serially on the calling thread. `Absolute`
+  Actor (`src/_Classes/VoxelController/Workers`) instead of serially on the calling thread. `Absolute`
   controllers, and any call that only touches one part, skip the Actor round-trip entirely.
 - **Four query types** - `Enums.QueryType.Box` / `Sphere` / `Region` / `Raycast`, set on
   `Hitbox.QueryType`.
