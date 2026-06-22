@@ -561,6 +561,25 @@ function VoxelController:_runShatter(target: Instance?, config: ShatterConfig, p
 		table.move(whole, 1, #whole, #buckets.Whole + 1, buckets.Whole)
 		table.move(produced.Partial, 1, #produced.Partial, #buckets.Partial + 1, buckets.Partial)
 		table.move(produced.Extra, 1, #produced.Extra, #buckets.Extra + 1, buckets.Extra)
+
+		-- Parts of a multi-part target the hitbox never touched (e.g. the floors above a
+		-- foundation cut) never enter `overlapping`, so on their own they'd stay completely
+		-- untouched - original Instances, still Anchored, never reaching Effects/Chunk. Wrap them
+		-- as Extra voxels too (no slicing - they weren't candidates for that) so a building still
+		-- falls as a whole once its support is cut away, not just the slice itself.
+		local touched = {}
+		for _, part in overlapping do
+			touched[part] = true
+		end
+		for _, part in candidates do
+			if not touched[part] then
+				part.CanCollide = true
+				part.CanQuery = true
+				part.CanTouch = true
+				applyEffects(part, config.Effects, cframe.Position)
+				table.insert(buckets.Extra, Voxel(part, "Extra", self, cframe.Position))
+			end
+		end
 	end
 
 	-- Welds the whole call's output together, across every candidate part it touched - has to

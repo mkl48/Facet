@@ -43,6 +43,13 @@ skips slicing entirely for parts the hitbox *fully* contains - those come back u
 `Result.Voxels.Whole`, each one still carrying a `:Shatter()` you can call later with no
 hitbox needed.
 
+If `Target` is a multi-part `Model`, only the parts the hitbox actually overlaps go through
+detection at all - any other part of that same `Model` (say, the floors above a foundation cut)
+never enters that step. Those parts still end up in `Result.Voxels.Extra`, unsliced but with
+`Effects` applied, specifically so `Effects.Chunk` can weld them into the same falling assembly
+as the slice itself - otherwise the building above the cut would just sit there inert, never
+having been touched by anything. See [Effects](./effects) for `Chunk`.
+
 ## Caveats
 
 `Raycast` casts once through the engine and only resolves the single closest hit along
