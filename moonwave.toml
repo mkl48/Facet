@@ -6,6 +6,9 @@ changelog = true
 classOrder = [
     "Facet",
     "VoxelController",
+    "Voxel",
+    "PendingResult",
+    "Workers",
     "Enums",
 ]
 [docusaurus]
@@ -36,8 +39,12 @@ title = "Octree spatial partitioning"
 description = "fast neighbor lookups, LOD, and culling without scanning the whole chunk"
 
 [[home.features]]
+title = "Four query types"
+description = "Box, Sphere, Region, and Raycast hitboxes, all backed by the same octree"
+
+[[home.features]]
 title = "Multithreaded voxelization"
-description = "Relative controllers split work across Actors and desynchronized workers"
+description = "Relative controllers split grid classification across an Actor pool, not the main thread"
 
 [[home.features]]
 title = "One verb: Shatter"

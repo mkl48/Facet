@@ -4,9 +4,14 @@
 -- source of truth - run `lune run scripts/build-installer` to refresh.
 --
 -- Mapping: src/init.luau -> ModuleScript "Facet"; src/X.luau -> child ModuleScript "X";
--- src/Y/init.luau -> child ModuleScript "Y" (with its own children); a folder without an
--- init.luau becomes a Folder. Source is embedded as a long-bracket string with a safe
--- `=` level (see longString below), so it reads verbatim and takes no escapes.
+-- src/Y/init.luau -> child ModuleScript "Y" (with its own children); src/Z.server.luau -> child
+-- Script "Z" (Enabled = false - see below); src/Z.client.luau -> child LocalScript "Z"; a
+-- folder without an init.luau becomes a Folder. Source is embedded as a long-bracket string
+-- with a safe `=` level (see longString below), so it reads verbatim and takes no escapes.
+--
+-- Script/LocalScript children are created Enabled = false: most of them (e.g. Workers' worker
+-- template) are only ever meant to run after being cloned into a purpose-built Actor at
+-- runtime, not as-installed.
 
 local fs = require("@lune/fs")
 
@@ -76,13 +81,28 @@ local function isSourceFile(entry: string): boolean
 	if entry == "init.lua" or entry == "init.luau" then
 		return false
 	end
-	if string.find(entry, "%.client%.") or string.find(entry, "%.server%.") then
-		return false
-	end
 	if string.find(entry, "%.spec%.") or string.find(entry, "%.story%.") then
 		return false
 	end
 	return string.match(entry, "%.luau?$") ~= nil
+end
+
+-- "X.server.luau" -> Script, "X.client.luau" -> LocalScript, anything else -> ModuleScript.
+local function classNameFor(entry: string): string
+	if string.find(entry, "%.server%.") then
+		return "Script"
+	elseif string.find(entry, "%.client%.") then
+		return "LocalScript"
+	end
+	return "ModuleScript"
+end
+
+-- Strips both the realm suffix (.server/.client) and the extension: "Worker.server.luau" -> "Worker".
+local function childNameFor(entry: string): string
+	local name = string.gsub(entry, "%.luau?$", "")
+	name = string.gsub(name, "%.server$", "")
+	name = string.gsub(name, "%.client$", "")
+	return name
 end
 
 -- Emit the creation of `dir` as a node parented to `parentVar`, then recurse. Returns the
@@ -107,8 +127,13 @@ local function build(dir: string, parentVar: string, name: string): string
 			build(path, var, entry)
 		elseif isSourceFile(entry) then
 			moduleCount += 1
-			local childName = string.gsub(entry, "%.luau?$", "")
-			emit(`mod({q(childName)}, {var}, {longString(fs.readFile(path))})`)
+			local childName = childNameFor(entry)
+			local className = classNameFor(entry)
+			if className == "ModuleScript" then
+				emit(`mod({q(childName)}, {var}, {longString(fs.readFile(path))})`)
+			else
+				emit(`inst({q(className)}, {q(childName)}, {var}, {longString(fs.readFile(path))})`)
+			end
 		end
 	end
 
@@ -138,6 +163,17 @@ local function folder(name, parent)
 	f.Name = name
 	f.Parent = parent
 	return f
+end
+
+-- Script/LocalScript children (e.g. Workers' worker template) - left Enabled = false since
+-- they're only meant to run after being cloned into a purpose-built Actor at runtime.
+local function inst(className, name, parent, source)
+	local s = Instance.new(className)
+	s.Name = name
+	s.Source = source
+	s.Enabled = false
+	s.Parent = parent
+	return s
 end
 
 local old = RS:FindFirstChild("Facet")

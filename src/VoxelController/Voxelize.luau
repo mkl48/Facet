@@ -6,8 +6,13 @@
 -- orientation, then (optionally) greedy-meshes runs of identically-classified cells into
 -- larger boxes - the standard "merge dimension by dimension" technique used by voxel engines
 -- (merge along X into runs, merge matching runs along Y into rectangles, merge matching
--- rectangles along Z into boxes). Multithreaded slicing across Actors for Relative controllers
--- is NOT implemented yet - that's the next pass.
+-- rectangles along Z into boxes).
+--
+-- Every function below this point is pure: Grid/HitboxConfig/Vector3/CFrame are plain data, and
+-- nothing here ever touches a live Instance. That's deliberate - it's what lets
+-- VoxelController/Workers run computeCells() on a desynchronized Actor (see Workers/init.luau).
+-- Only `buildGrid` reads a BasePart, and only once, on the calling (synchronized) thread, before
+-- any of this runs.
 
 export type VoxelData = {
 	CFrame: CFrame,
@@ -233,6 +238,67 @@ local function greedyMesh(grid: Grid, classify: (Vector3) -> string?): { MergedV
 	return merged
 end
 
+-- The same shape VoxelController.HitboxConfig uses, kept local to avoid requiring
+-- VoxelController/init.luau from here (that module already requires this one).
+export type PointHitbox = {
+	Size: Vector3?,
+	CFrame: CFrame?,
+	QueryType: string?,
+}
+
+-- Classifies one world-space point as "Partial" (inside the hitbox) or "Extra" (outside it).
+-- Pure - no Instance access - so it's safe to call from a desynchronized Actor.
+local function classifyPoint(point: Vector3, hitbox: PointHitbox): string
+	local size = hitbox.Size or Vector3.new(4, 4, 4)
+	local cframe = hitbox.CFrame or CFrame.new()
+	local queryType = hitbox.QueryType or "Box"
+
+	if queryType == "Sphere" then
+		return if (point - cframe.Position).Magnitude <= size.X / 2 then "Partial" else "Extra"
+	end
+
+	local relative = if queryType == "Region" then point - cframe.Position else cframe:PointToObjectSpace(point)
+	local half = size / 2
+	local inside = math.abs(relative.X) <= half.X and math.abs(relative.Y) <= half.Y and math.abs(relative.Z) <= half.Z
+	return if inside then "Partial" else "Extra"
+end
+
+-- The full per-part voxelization computation: greedy-mesh every "Extra"-classified cell into
+-- the fewest boxes that cover it, and emit every other cell as its own piece. This is what
+-- VoxelController._voxelizePart turns into real Instances - either inline on the calling
+-- thread, or via VoxelController/Workers on a desynchronized Actor, since this function itself
+-- never touches an Instance.
+local function computeCells(grid: Grid, classify: (Vector3) -> string?): { MergedVoxel }
+	local out: { MergedVoxel } = {}
+
+	local merged = greedyMesh(grid, function(pos)
+		return if classify(pos) == "Extra" then "Extra" else nil
+	end)
+	for _, data in merged do
+		table.insert(out, data)
+	end
+
+	for x = 0, grid.CountX - 1 do
+		for y = 0, grid.CountY - 1 do
+			for z = 0, grid.CountZ - 1 do
+				local pos = cellPosition(grid, x, y, z)
+				local kind = classify(pos) or "Partial"
+				if kind ~= "Extra" then
+					table.insert(out, {
+						CFrame = grid.Origin * CFrame.new((x + 0.5) * grid.StepX, (y + 0.5) * grid.StepY, (z + 0.5) * grid.StepZ),
+						Size = Vector3.new(grid.StepX, grid.StepY, grid.StepZ),
+						Color = grid.Color,
+						Material = grid.Material,
+						Kind = kind,
+					})
+				end
+			end
+		end
+	end
+
+	return out
+end
+
 return {
 	slice = slice,
 	resolveVoxelSize = resolveVoxelSize,
@@ -240,4 +306,6 @@ return {
 	buildGrid = buildGrid,
 	cellPosition = cellPosition,
 	greedyMesh = greedyMesh,
+	classifyPoint = classifyPoint,
+	computeCells = computeCells,
 }

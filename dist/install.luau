@@ -20,6 +20,17 @@ local function folder(name, parent)
 	return f
 end
 
+-- Script/LocalScript children (e.g. Workers' worker template) - left Enabled = false since
+-- they're only meant to run after being cloned into a purpose-built Actor at runtime.
+local function inst(className, name, parent, source)
+	local s = Instance.new(className)
+	s.Name = name
+	s.Source = source
+	s.Enabled = false
+	s.Parent = parent
+	return s
+end
+
 local old = RS:FindFirstChild("Facet")
 if old then
 	old:Destroy()
@@ -36,17 +47,39 @@ local _1 = mod("Facet", RS, [[
 -- See VoxelController/init.luau for the Shatter pipeline and Enums/init.luau for every
 -- enum referenced in configs below.
 
+--[=[
+	@class Facet
+]=]
+
 local VoxelController = require(script.VoxelController)
+local PendingResult = require(script.VoxelController.PendingResult)
 local Enums = require(script.Enums)
 
 local Facet = {}
 
 Facet.Enums = Enums
 
+-- Config tables - everything a Define()/Shatter() call accepts. See VoxelController for the
+-- @interface doc blocks on each of these.
 export type DefineConfig = VoxelController.DefineConfig
 export type ShatterConfig = VoxelController.ShatterConfig
 export type HitboxConfig = VoxelController.HitboxConfig
+
+-- The objects a Define()/Shatter() call hands back.
 export type VoxelController = VoxelController.VoxelController
+export type PendingResult = PendingResult.PendingResult
+export type Result = PendingResult.Result
+export type Voxel = PendingResult.Voxel
+
+-- Enum-backed string unions, re-exported so callers can annotate their own variables
+-- (`local kind: Facet.HitboxType`) without reaching into `Facet.Enums` for the type.
+export type ControllerType = Enums.ControllerType
+export type RuntimeType = Enums.RuntimeType
+export type HitboxType = Enums.HitboxType
+export type QueryType = Enums.QueryType
+export type EffectsType = Enums.Effects
+export type CleanupType = Enums.Cleanup
+export type EventType = Enums.Event
 
 --[=[
 	@within Facet
@@ -137,14 +170,16 @@ local _3 = mod("VoxelController", _1, [[
 -- through a per-call Octree (so it works for any candidate regardless of CanQuery/workspace
 -- placement) and all four QueryTypes are wired up; cells that land outside the hitbox (kind
 -- "Extra") are greedy-meshed into a handful of boxes, while cells the player is meant to see
--- fragment ("Partial"/no-hitbox) stay one piece per cell. Multithreaded slicing across Actors
--- for Relative controllers is the one item still NOT implemented - see Voxelize.luau.
+-- fragment ("Partial"/no-hitbox) stay one piece per cell. Relative controllers split the
+-- per-part grid classification + greedy meshing across an Actor pool when a call touches more
+-- than one part - see Workers/init.luau and _voxelizeBatch below.
 
 local Enums = require(script.Parent.Enums)
 local PendingResult = require(script.PendingResult)
 local VoxelModule = require(script.Voxel)
 local Voxelize = require(script.Voxelize)
 local Octree = require(script.Octree)
+local Workers = require(script.Workers)
 
 local Voxel = VoxelModule.new
 local applyEffects = VoxelModule.applyEffects
@@ -178,6 +213,18 @@ local function voxelGroupFor(name: string): Model
 	return group :: Model
 end
 
+--[=[
+	@interface HitboxConfig
+	@within VoxelController
+	.Size Vector3? -- box/region extents, in studs, centered on `CFrame`. Ignored by `Raycast`.
+	.CFrame CFrame? -- where the hitbox sits in the world. Defaults to `CFrame.new()` (the origin) if omitted.
+	.ViewVector Vector3? -- cast direction for `QueryType.Raycast` only; ignored by every other QueryType.
+	.Color Color3? -- cosmetic only - tints a visualized hitbox if you render one yourself. Facet never draws it for you.
+	.QueryType Enums.QueryType? -- `Box` (default) | `Sphere` | `Region` | `Raycast`. Picks which exact-shape test runs after the octree broad phase.
+	.HitboxType Enums.HitboxType? -- `Partial` (default, voxelizes whatever's detected) | `Whole` (returns fully-contained parts untouched, no slicing).
+	.Shape Enum.PartType? -- reserved for a future visualized-hitbox helper; not read by Shatter today.
+	.Copy Instance? -- reserved for a future "clone the hitbox as a real part" helper; not read by Shatter today.
+]=]
 export type HitboxConfig = {
 	Size: Vector3?,
 	CFrame: CFrame?,
@@ -189,15 +236,32 @@ export type HitboxConfig = {
 	Copy: Instance?,
 }
 
+--[=[
+	@interface ShatterConfig
+	@within VoxelController
+	.Hitbox HitboxConfig? -- scopes detection to a region of the target. Omit entirely to voxelize the whole target.
+	.Effects {[string]: any}? -- keyed by `Enums.Effects` (`Explode = { Radius: number }`, `Anchored = boolean`), or the string key `"Velocity"` for a raw `Vector3`.
+	.Cleanup (Enums.Cleanup | (Voxel) -> ())? -- `Rebuild` | `Fade` | `Destroy`, or your own `function(voxel) ... end`. Only ever runs against `Result.Voxels.Partial`.
+	.CleanupDuration number? -- seconds the Cleanup tween takes (Fade/Rebuild only - Destroy is instant). Defaults to 0.5 for Fade, 0.6 for Rebuild.
+]=]
 export type ShatterConfig = {
 	Hitbox: HitboxConfig?,
 	Effects: { [string]: any }?,
 	Cleanup: (Enums.Cleanup | ((any) -> ()))?,
-	-- Seconds the Cleanup tween takes (Fade/Rebuild only - Destroy is instant and ignores
-	-- this). Defaults to 0.5 for Fade, 0.6 for Rebuild when omitted.
 	CleanupDuration: number?,
 }
 
+--[=[
+	@interface DefineConfig
+	@within VoxelController
+	.Type Enums.ControllerType -- `Relative` (dynamic sizing, requires `RecommendedVoxelSize`) or `Absolute` (fixed `VoxelSize`). Required.
+	.RuntimeType Enums.RuntimeType? -- `Instant` (default, runs every Shatter immediately) or `Timeline` (queues calls until `:Start()`).
+	.Host Instance? -- scopes every Shatter call on this controller to one instance without naming a Target each time.
+	.MinimumVoxelSize number? -- Relative only. Floor `Shatter` will shrink voxels to under load. Defaults to `RecommendedVoxelSize` (no shrink) if omitted.
+	.RecommendedVoxelSize number? -- Relative only. Target voxel size the controller sizes toward. Required for `Relative`.
+	.Drivers {VoxelizationMethod: string?}? -- reserved for swapping the slicing backend; not read by Shatter today.
+	.VoxelSize number? -- Absolute only. The fixed cube size every voxel is sliced to. Required for `Absolute`.
+]=]
 export type DefineConfig = {
 	Type: Enums.ControllerType,
 	RuntimeType: Enums.RuntimeType?,
@@ -208,9 +272,13 @@ export type DefineConfig = {
 	VoxelSize: number?,
 }
 
--- The actual instance Facet.Define()/VoxelController.new() hands back. Typed explicitly (and
--- returned through this type, not `any`) so callers get real Intellisense on `:Shatter()`,
--- `:Start()`, `:Destroy()`, and the controller's own fields instead of `any`.
+--[=[
+	@class VoxelController
+	Returned by [Facet.Define]. Owns one Shatter pipeline: resolve candidate parts, optionally
+	classify them against a [HitboxConfig], voxelize, apply Effects, run Cleanup, and fire a
+	[Result] through the [PendingResult] chain. Typed explicitly (never `any`) so every field
+	and method below has real Intellisense.
+]=]
 export type VoxelController = {
 	Type: Enums.ControllerType,
 	RuntimeType: Enums.RuntimeType,
@@ -306,22 +374,6 @@ function VoxelController:_intersectsRegion(part: BasePart, position: Vector3, si
 	return (relative - clamped).Magnitude <= boundingSphereRadius(part)
 end
 
--- Same shapes as the part-overlap tests above, but for a single point - used to classify
--- individual grid cells (Partial vs Extra) once a part has already matched the hitbox.
-function VoxelController:_pointInsideHitbox(point: Vector3, hitbox: HitboxConfig): boolean
-	local size = hitbox.Size or Vector3.new(4, 4, 4)
-	local cframe = hitbox.CFrame or CFrame.new()
-	local queryType = hitbox.QueryType or Enums.QueryType.Box
-
-	if queryType == Enums.QueryType.Sphere then
-		return (point - cframe.Position).Magnitude <= size.X / 2
-	end
-
-	local relative = if queryType == Enums.QueryType.Region then point - cframe.Position else cframe:PointToObjectSpace(point)
-	local half = size / 2
-	return math.abs(relative.X) <= half.X and math.abs(relative.Y) <= half.Y and math.abs(relative.Z) <= half.Z
-end
-
 function VoxelController:_isFullyContained(part: BasePart, hitbox: HitboxConfig): boolean
 	local size = hitbox.Size or Vector3.new(4, 4, 4)
 	local cframe = hitbox.CFrame or CFrame.new()
@@ -381,85 +433,118 @@ function VoxelController:_queryHitbox(hitbox: HitboxConfig, candidates: { BasePa
 	return matches
 end
 
--- Slices `part` and wraps each piece as a Voxel. `classify(worldPosition)` returns "Partial" or
--- "Extra" (defaults every cell to "Partial" when there's no hitbox to classify against). Only
--- "Extra" cells - produced but not actually wanted - get greedy-meshed into larger boxes; every
--- other cell stays one instance per grid cell, since that's the visible debris Shatter exists
--- to produce.
-function VoxelController:_voxelizePart(part: BasePart, config: ShatterConfig, origin: Vector3?, classify: ((Vector3) -> string)?)
+-- Reads `part` once (Size/CFrame/Color/Material - the only Instance access in this whole
+-- pipeline) and lays out its grid, packaged with a plain (HitboxConfig-shaped but Instance-free)
+-- hitbox alongside it. The result is what a Workers job actually carries across the Actor
+-- boundary - see Workers/init.luau.
+function VoxelController:_buildJob(part: BasePart, config: ShatterConfig, hitbox: HitboxConfig?): Workers.Job
 	local voxelSize = (config :: any).Size or self:_voxelSizeFor(part)
 	local grid = Voxelize.buildGrid(part, voxelSize)
-	local resolvedClassify = classify or function()
-		return "Partial"
-	end
+	local pointHitbox = if hitbox then { Size = hitbox.Size, CFrame = hitbox.CFrame, QueryType = hitbox.QueryType } else nil
+	return { Grid = grid, Hitbox = pointHitbox }
+end
 
+-- Turns an already-computed cell list (Voxelize.computeCells' output, from either the inline
+-- path or a Workers job) into real Parts, parented under workspace._Bin.Voxels.<part.Name> and
+-- wrapped as Voxels. The only place Instance.new ever runs in the whole Shatter pipeline.
+function VoxelController:_emitCells(part: BasePart, config: ShatterConfig, origin: Vector3?, cells: { Voxelize.MergedVoxel }): { [string]: { VoxelModule.Voxel } }
 	local parent = voxelGroupFor(part.Name)
 	local wasAnchored = part.Anchored
-	local produced: { [string]: { any } } = { Whole = {}, Partial = {}, Extra = {} }
+	local produced: { [string]: { VoxelModule.Voxel } } = { Whole = {}, Partial = {}, Extra = {} }
 
-	local function emit(cframe: CFrame, size: Vector3, kind: string)
+	for _, data in cells do
 		local instance = Instance.new("Part")
-		instance.Size = size
-		instance.CFrame = cframe
-		instance.Color = grid.Color
-		instance.Material = grid.Material
+		instance.Size = data.Size
+		instance.CFrame = data.CFrame
+		instance.Color = data.Color
+		instance.Material = data.Material
 		instance.Anchored = wasAnchored
 		instance.Parent = parent
 
 		applyEffects(instance, config.Effects, origin or part.Position)
-		table.insert(produced[kind], Voxel(instance, kind, self))
-	end
-
-	local merged = Voxelize.greedyMesh(grid, function(pos)
-		return if resolvedClassify(pos) == "Extra" then "Extra" else nil
-	end)
-	for _, data in merged do
-		emit(data.CFrame, data.Size, data.Kind)
-	end
-
-	for x = 0, grid.CountX - 1 do
-		for y = 0, grid.CountY - 1 do
-			for z = 0, grid.CountZ - 1 do
-				local pos = Voxelize.cellPosition(grid, x, y, z)
-				local kind = resolvedClassify(pos)
-				if kind ~= "Extra" then
-					local cframe = grid.Origin * CFrame.new((x + 0.5) * grid.StepX, (y + 0.5) * grid.StepY, (z + 0.5) * grid.StepZ)
-					emit(cframe, Vector3.new(grid.StepX, grid.StepY, grid.StepZ), kind)
-				end
-			end
-		end
+		table.insert(produced[data.Kind], Voxel(instance, data.Kind, self))
 	end
 
 	part:Destroy()
 	return produced
 end
 
+-- The single-part path: builds the job and computes its cells inline, on the calling thread.
+-- Used by Absolute controllers and by Relative controllers when there's only one part to slice
+-- (an Actor round-trip isn't worth it for one part - see _runShatter for the batched path).
+function VoxelController:_voxelizePart(part: BasePart, config: ShatterConfig, origin: Vector3?, hitbox: HitboxConfig?)
+	local job = self:_buildJob(part, config, hitbox)
+	local classify = if hitbox
+		then function(pos: Vector3)
+			return Voxelize.classifyPoint(pos, job.Hitbox :: Voxelize.PointHitbox)
+		end
+		else function()
+			return "Partial"
+		end
+	local cells = Voxelize.computeCells(job.Grid, classify)
+	return self:_emitCells(part, config, origin, cells)
+end
+
+-- Relative controllers split voxelization for more than one part across the Workers Actor pool
+-- (see Workers/init.luau) - each part's grid classification + greedy meshing runs on its own
+-- desynchronized thread, then every result comes back here to actually create Parts. Absolute
+-- controllers, and any Relative call that only touches one part, skip the Actor round-trip
+-- entirely via _voxelizePart above.
+function VoxelController:_voxelizeBatch(parts: { BasePart }, config: ShatterConfig, origin: Vector3?, hitbox: HitboxConfig?): { [string]: { VoxelModule.Voxel } }
+	if #parts == 0 then
+		return { Whole = {}, Partial = {}, Extra = {} }
+	end
+	if self.Type ~= Enums.ControllerType.Relative or #parts == 1 then
+		local combined: { [string]: { VoxelModule.Voxel } } = { Whole = {}, Partial = {}, Extra = {} }
+		for _, part in parts do
+			local produced = self:_voxelizePart(part, config, origin, hitbox)
+			table.move(produced.Partial, 1, #produced.Partial, #combined.Partial + 1, combined.Partial)
+			table.move(produced.Extra, 1, #produced.Extra, #combined.Extra + 1, combined.Extra)
+		end
+		return combined
+	end
+
+	local jobs: { Workers.Job } = {}
+	for i, part in parts do
+		jobs[i] = self:_buildJob(part, config, hitbox)
+	end
+	local results = Workers.computeAsync(jobs)
+
+	local combined: { [string]: { VoxelModule.Voxel } } = { Whole = {}, Partial = {}, Extra = {} }
+	for i, part in parts do
+		local produced = self:_emitCells(part, config, origin, results[i])
+		table.move(produced.Partial, 1, #produced.Partial, #combined.Partial + 1, combined.Partial)
+		table.move(produced.Extra, 1, #produced.Extra, #combined.Extra + 1, combined.Extra)
+	end
+	return combined
+end
+
 function VoxelController:_runShatter(target: Instance, config: ShatterConfig, pending: PendingResult.PendingResult)
 	local candidates = self:_resolveCandidateParts(target)
-	local buckets = { Whole = {}, Partial = {}, Extra = {} }
+	local buckets: { Whole: { VoxelModule.Voxel }, Partial: { VoxelModule.Voxel }, Extra: { VoxelModule.Voxel } } =
+		{ Whole = {}, Partial = {}, Extra = {} }
 	local hitbox = config.Hitbox
 
 	if not hitbox then
-		for _, part in candidates do
-			local produced = self:_voxelizePart(part, config, part.Position)
-			table.move(produced.Partial, 1, #produced.Partial, #buckets.Partial + 1, buckets.Partial)
-		end
+		local produced = self:_voxelizeBatch(candidates, config, nil, nil)
+		table.move(produced.Partial, 1, #produced.Partial, #buckets.Partial + 1, buckets.Partial)
 	else
 		local cframe = hitbox.CFrame or CFrame.new()
 		local hitboxType = hitbox.HitboxType or Enums.HitboxType.Partial
 		local overlapping = self:_queryHitbox(hitbox, candidates)
 
+		local toSlice: { BasePart } = {}
 		for _, part in overlapping do
 			if hitboxType == Enums.HitboxType.Whole and self:_isFullyContained(part, hitbox) then
 				table.insert(buckets.Whole, Voxel(part, Enums.HitboxType.Whole, self))
 			else
-				local produced = self:_voxelizePart(part, config, cframe.Position, function(pos)
-					return if self:_pointInsideHitbox(pos, hitbox) then "Partial" else "Extra"
-				end)
-				table.move(produced.Partial, 1, #produced.Partial, #buckets.Partial + 1, buckets.Partial)
-				table.move(produced.Extra, 1, #produced.Extra, #buckets.Extra + 1, buckets.Extra)
+				table.insert(toSlice, part)
 			end
 		end
+
+		local produced = self:_voxelizeBatch(toSlice, config, cframe.Position, hitbox)
+		table.move(produced.Partial, 1, #produced.Partial, #buckets.Partial + 1, buckets.Partial)
+		table.move(produced.Extra, 1, #produced.Extra, #buckets.Extra + 1, buckets.Extra)
 	end
 
 	local result = {
@@ -496,9 +581,18 @@ function VoxelController:_runShatter(target: Instance, config: ShatterConfig, pe
 	self._cleanup = cleanupMethod
 end
 
--- `Shatter(Config)` when the controller has a Host (Target is implied); `Shatter(Target, Config)`
--- otherwise. Hitbox is optional - omit it to shatter the whole Target/Host directly.
-function VoxelController:Shatter(a: Instance | ShatterConfig, b: ShatterConfig?)
+--[=[
+	@within VoxelController
+	@method Shatter
+	@param a Instance | ShatterConfig -- a Target when the controller has no Host, otherwise the ShatterConfig directly.
+	@param b ShatterConfig? -- the config, when `a` was a Target.
+	@return PendingResult -- chain off it with `:Next(Enums.Event.X):Then(callback)`.
+
+	`Shatter(Config)` when the controller has a [Host], Target is implied. `Shatter(Target, Config)`
+	otherwise. `Hitbox` is optional in either form - omit it to shatter the whole Target/Host
+	directly with no detection step.
+]=]
+function VoxelController:Shatter(a: Instance | ShatterConfig, b: ShatterConfig?): PendingResult.PendingResult
 	local target: Instance
 	local config: ShatterConfig
 
@@ -522,7 +616,12 @@ function VoxelController:Shatter(a: Instance | ShatterConfig, b: ShatterConfig?)
 	return pending
 end
 
--- Flushes the Timeline queue in call order. No-op for Instant controllers (they never queue).
+--[=[
+	@within VoxelController
+	@method Start
+	Flushes the `Timeline` queue in call order. No-op for `Instant` controllers - they never queue,
+	every `:Shatter()` call already ran by the time it returns.
+]=]
 function VoxelController:Start()
 	self._started = true
 	local queue = self._queue
@@ -532,6 +631,12 @@ function VoxelController:Start()
 	end
 end
 
+--[=[
+	@within VoxelController
+	@method Destroy
+	Clears any queued `Timeline` jobs that haven't run yet. Doesn't touch parts already produced
+	by past `:Shatter()` calls - those live on independently under `workspace._Bin.Voxels`.
+]=]
 function VoxelController:Destroy()
 	self._queue = {}
 end
@@ -693,16 +798,43 @@ mod("PendingResult", _3, [[
 -- (each PendingResult only lives for one Shatter call).
 
 local Enums = require(script.Parent.Parent.Enums)
+local VoxelModule = require(script.Parent.Voxel)
 
+export type Voxel = VoxelModule.Voxel
+
+--[=[
+	@interface Result
+	@within PendingResult
+	.Voxels {Whole: {Voxel}, Partial: {Voxel}, Extra: {Voxel}} -- every produced [Voxel], split three ways. `Whole`: isolated but never sliced (HitboxType.Whole only). `Partial`: the actual debris - sliced, and the only bucket Cleanup ever runs against. `Extra`: produced but outside the hitbox - greedy-meshed into a handful of boxes and left alone unless you Cleanup it yourself.
+	.Instance Instance? -- the Target/Host this Shatter call ran against.
+	.CollisionPoint Vector3? -- reserved for a future raycast-driven Shatter helper; not populated today.
+	.SurfaceNormal Vector3? -- reserved for a future raycast-driven Shatter helper; not populated today.
+]=]
 export type Result = {
-	Voxels: { Whole: { any }, Partial: { any }, Extra: { any } },
+	Voxels: { Whole: { Voxel }, Partial: { Voxel }, Extra: { Voxel } },
 	Instance: Instance?,
 	CollisionPoint: Vector3?,
 	SurfaceNormal: Vector3?,
 }
 
+export type Then = { Then: (self: Then, callback: (Result) -> ()) -> PendingResult }
+
+--[=[
+	@class PendingResult
+	The chain object every `Controller:Shatter(...)` call returns:
+	`Controller:Shatter(...):Next(Enums.Event.X):Then(callback)`. Listeners registered before the
+	matching event fires run immediately when it does; listeners registered after a past event
+	has already fired never run for that firing - each PendingResult only lives for one Shatter
+	call.
+]=]
 export type PendingResult = {
-	Next: (self: PendingResult, event: Enums.Event) -> { Then: (self: any, callback: (Result) -> ()) -> PendingResult },
+	--[=[
+		@within PendingResult
+		@method Next
+		@param event Enums.Event -- `NewVoxel` (fires once, right after voxelization/Effects) or `Destroyed` (fires once every `Partial` voxel from this call has been destroyed by Cleanup).
+		@return {Then: (callback: (Result) -> ()) -> PendingResult}
+	]=]
+	Next: (self: PendingResult, event: Enums.Event) -> Then,
 	_fire: (self: PendingResult, event: Enums.Event, result: Result) -> (),
 }
 
@@ -745,18 +877,46 @@ mod("Voxel", _3, [[
 local TweenService = game:GetService("TweenService")
 local Enums = require(script.Parent.Parent.Enums)
 
+-- What bucket of Result.Voxels this voxel landed in: Whole (isolated but never sliced), Partial
+-- (sliced debris - the only kind Cleanup ever runs against), or Extra (produced, outside the
+-- hitbox, greedy-meshed, left alone unless you Cleanup it yourself).
 export type Kind = "Whole" | "Partial" | "Extra"
 
+--[=[
+	@interface ShatterSizeConfig
+	@within Voxel
+	.Effects {[string]: any}? -- same shape as ShatterConfig.Effects.
+	.Size number? -- overrides the controller's own sizing rule for just this re-shatter.
+]=]
 export type ShatterSizeConfig = {
 	Effects: { [string]: any }?,
 	Size: number?,
 }
 
+--[=[
+	@class Voxel
+	One produced part, wrapped with the behaviour every `Result.Voxels` entry carries. Every
+	entry in `Result.Voxels.Whole/Partial/Extra` is one of these, not a bare `BasePart`.
+]=]
 export type Voxel = {
 	Instance: BasePart,
 	Kind: Kind,
 	OriginalCFrame: CFrame,
+	--[=[
+		@within Voxel
+		@method Cleanup
+		Runs a Cleanup strategy against this one voxel directly - the same logic Shatter's own
+		`Cleanup` config runs against every `Partial` voxel automatically. `duration` only
+		applies to `Fade`/`Rebuild` (`Destroy` is instant).
+	]=]
 	Cleanup: (self: Voxel, method: (Enums.Cleanup | ((Voxel) -> ())?), duration: number?) -> (),
+	--[=[
+		@within Voxel
+		@method Shatter
+		Only present on `Whole` voxels (a part the hitbox isolated but never sliced). Re-shatters
+		just this part - `config` only accepts `Effects`/`Size`, since there's no hitbox left to
+		detect against; the part itself IS the target.
+	]=]
 	Shatter: ((self: Voxel, config: ShatterSizeConfig?) -> any)?,
 }
 
@@ -835,8 +995,13 @@ mod("Voxelize", _3, [[
 -- orientation, then (optionally) greedy-meshes runs of identically-classified cells into
 -- larger boxes - the standard "merge dimension by dimension" technique used by voxel engines
 -- (merge along X into runs, merge matching runs along Y into rectangles, merge matching
--- rectangles along Z into boxes). Multithreaded slicing across Actors for Relative controllers
--- is NOT implemented yet - that's the next pass.
+-- rectangles along Z into boxes).
+--
+-- Every function below this point is pure: Grid/HitboxConfig/Vector3/CFrame are plain data, and
+-- nothing here ever touches a live Instance. That's deliberate - it's what lets
+-- VoxelController/Workers run computeCells() on a desynchronized Actor (see Workers/init.luau).
+-- Only `buildGrid` reads a BasePart, and only once, on the calling (synchronized) thread, before
+-- any of this runs.
 
 export type VoxelData = {
 	CFrame: CFrame,
@@ -1062,6 +1227,67 @@ local function greedyMesh(grid: Grid, classify: (Vector3) -> string?): { MergedV
 	return merged
 end
 
+-- The same shape VoxelController.HitboxConfig uses, kept local to avoid requiring
+-- VoxelController/init.luau from here (that module already requires this one).
+export type PointHitbox = {
+	Size: Vector3?,
+	CFrame: CFrame?,
+	QueryType: string?,
+}
+
+-- Classifies one world-space point as "Partial" (inside the hitbox) or "Extra" (outside it).
+-- Pure - no Instance access - so it's safe to call from a desynchronized Actor.
+local function classifyPoint(point: Vector3, hitbox: PointHitbox): string
+	local size = hitbox.Size or Vector3.new(4, 4, 4)
+	local cframe = hitbox.CFrame or CFrame.new()
+	local queryType = hitbox.QueryType or "Box"
+
+	if queryType == "Sphere" then
+		return if (point - cframe.Position).Magnitude <= size.X / 2 then "Partial" else "Extra"
+	end
+
+	local relative = if queryType == "Region" then point - cframe.Position else cframe:PointToObjectSpace(point)
+	local half = size / 2
+	local inside = math.abs(relative.X) <= half.X and math.abs(relative.Y) <= half.Y and math.abs(relative.Z) <= half.Z
+	return if inside then "Partial" else "Extra"
+end
+
+-- The full per-part voxelization computation: greedy-mesh every "Extra"-classified cell into
+-- the fewest boxes that cover it, and emit every other cell as its own piece. This is what
+-- VoxelController._voxelizePart turns into real Instances - either inline on the calling
+-- thread, or via VoxelController/Workers on a desynchronized Actor, since this function itself
+-- never touches an Instance.
+local function computeCells(grid: Grid, classify: (Vector3) -> string?): { MergedVoxel }
+	local out: { MergedVoxel } = {}
+
+	local merged = greedyMesh(grid, function(pos)
+		return if classify(pos) == "Extra" then "Extra" else nil
+	end)
+	for _, data in merged do
+		table.insert(out, data)
+	end
+
+	for x = 0, grid.CountX - 1 do
+		for y = 0, grid.CountY - 1 do
+			for z = 0, grid.CountZ - 1 do
+				local pos = cellPosition(grid, x, y, z)
+				local kind = classify(pos) or "Partial"
+				if kind ~= "Extra" then
+					table.insert(out, {
+						CFrame = grid.Origin * CFrame.new((x + 0.5) * grid.StepX, (y + 0.5) * grid.StepY, (z + 0.5) * grid.StepZ),
+						Size = Vector3.new(grid.StepX, grid.StepY, grid.StepZ),
+						Color = grid.Color,
+						Material = grid.Material,
+						Kind = kind,
+					})
+				end
+			end
+		end
+	end
+
+	return out
+end
+
 return {
 	slice = slice,
 	resolveVoxelSize = resolveVoxelSize,
@@ -1069,8 +1295,179 @@ return {
 	buildGrid = buildGrid,
 	cellPosition = cellPosition,
 	greedyMesh = greedyMesh,
+	classifyPoint = classifyPoint,
+	computeCells = computeCells,
 }
 ]])
+local _4 = mod("Workers", _3, [[
+-- Facet
+-- VoxelController/Workers/init.luau
+-- Plinko Labs
+--
+-- Coordinates a small pool of Actors that run Voxelize.computeCells() in parallel - the
+-- multithreaded path Relative controllers take when a Shatter call touches more than one
+-- candidate part. Each job hands a worker plain data only (a Grid and, if there's a hitbox, a
+-- Voxelize.PointHitbox) - never the BasePart itself - because Instance access isn't safe from
+-- a desynchronized Actor. Instance creation always happens back on the calling thread once
+-- every job's plain {CFrame, Size, Color, Material, Kind} result comes back.
+--
+-- NOTE: this can't be exercised by `lune run` - headless Lune has no Actor/parallel Luau
+-- support at all, so this module has only been verified by reading against the documented
+-- Actor/SendMessage/BindToMessageParallel APIs, not by an actual Studio run. computeAsync()
+-- falls back to running every job inline (no Actor) if the pool fails to build for any reason,
+-- so a real engine surprise here degrades to "no speedup," not a broken Shatter call.
 
-print("[Facet] installed 7 modules under ReplicatedStorage.Facet")
+local RunService = game:GetService("RunService")
+local Voxelize = require(script.Parent.Voxelize)
+
+local POOL_SIZE = 4
+
+--[=[
+	@interface Job
+	@within Workers
+	.Grid Grid -- a part's already-built grid (Voxelize.buildGrid) - plain data, no Instance reference.
+	.Hitbox PointHitbox? -- the classification hitbox, in the same Instance-free shape Voxelize.classifyPoint expects. nil means "no hitbox" - every cell classifies Partial.
+]=]
+export type Job = { Grid: Voxelize.Grid, Hitbox: Voxelize.PointHitbox? }
+
+--[=[
+	@class Workers
+	The Actor pool VoxelController dispatches through for multithreaded voxelization. Not part
+	of the public Shatter API - VoxelController calls `Workers.computeAsync` itself whenever a
+	Relative controller's Shatter call touches more than one part; nothing here needs calling
+	directly from game code.
+]=]
+local Workers = {}
+
+local pool: { Actor }? = nil
+local poolFailed = false
+
+local function runInline(job: Job): { Voxelize.MergedVoxel }
+	local hitbox = job.Hitbox
+	local classify = if hitbox
+		then function(pos: Vector3)
+			return Voxelize.classifyPoint(pos, hitbox)
+		end
+		else function()
+			return "Partial"
+		end
+	return Voxelize.computeCells(job.Grid, classify)
+end
+
+local function buildPool(): { Actor }?
+	local ok, actors = pcall(function()
+		local runContext = if RunService:IsServer() then Enum.RunContext.Server else Enum.RunContext.Client
+		local built = {}
+		for i = 1, POOL_SIZE do
+			local actor = Instance.new("Actor")
+			actor.Name = "FacetWorker" .. i
+			local worker = (script :: Instance).Worker:Clone() :: Script
+			worker.RunContext = runContext
+			worker.Enabled = true
+			worker.Parent = actor
+			actor.Parent = script
+			built[i] = actor
+		end
+		return built
+	end)
+	if not ok then
+		warn("[Facet] Worker pool failed to start, falling back to single-threaded voxelization: " .. tostring(actors))
+		return nil
+	end
+	return actors
+end
+
+local function getPool(): { Actor }?
+	if poolFailed then
+		return nil
+	end
+	if not pool then
+		pool = buildPool()
+		poolFailed = pool == nil
+	end
+	return pool
+end
+
+--[=[
+	@within Workers
+	Runs Voxelize.computeCells() for every job in `jobs`, spread across the Actor pool, and
+	returns the results in the same order `jobs` was given. Falls back to running every job
+	serially on the calling thread (still correct, just not parallel) if the Actor pool isn't
+	available.
+]=]
+function Workers.computeAsync(jobs: { Job }): { { Voxelize.MergedVoxel } }
+	local actors = getPool()
+	if not actors then
+		local results = {}
+		for i, job in jobs do
+			results[i] = runInline(job)
+		end
+		return results
+	end
+
+	local results = {}
+	local remaining = #jobs
+	if remaining == 0 then
+		return results
+	end
+
+	local done = Instance.new("BindableEvent")
+	for i, job in jobs do
+		local actor = actors[(i - 1) % #actors + 1]
+		local reply = Instance.new("BindableEvent")
+		reply.Event:Once(function(cells)
+			results[i] = cells
+			remaining -= 1
+			reply:Destroy()
+			if remaining == 0 then
+				done:Fire()
+			end
+		end)
+		actor:SendMessage("ComputeCells", reply, job.Grid, job.Hitbox)
+	end
+
+	if remaining > 0 then
+		done.Event:Wait()
+	end
+	done:Destroy()
+
+	return results
+end
+
+return Workers
+]])
+inst("Script", "Worker", _4, [[
+-- Facet
+-- VoxelController/Workers/Worker.server.luau
+-- Plinko Labs
+--
+-- Cloned into a fresh Actor by Workers.computeAsync() and run with RunContext forced to match
+-- whichever realm called Shatter (it's parented under ReplicatedStorage, where a Legacy-context
+-- Script would never run on its own). Binds in parallel: BindToMessageParallel hands this
+-- function its own desynchronized thread per message, so jobs for different Actors genuinely
+-- run at the same time. Touches no Instance except the `reply` BindableEvent it's handed, and
+-- only after resynchronizing - everything in between is Voxelize, which is pure.
+
+local Voxelize = require(script.Parent.Parent.Voxelize)
+
+local actor = script:GetActor()
+assert(actor, "Worker.server.luau must run inside an Actor")
+
+actor:BindToMessageParallel("ComputeCells", function(reply: BindableEvent, grid: Voxelize.Grid, hitbox: Voxelize.PointHitbox?)
+	local classify = if hitbox
+		then function(pos: Vector3)
+			return Voxelize.classifyPoint(pos, hitbox)
+		end
+		else function()
+			return "Partial"
+		end
+
+	local cells = Voxelize.computeCells(grid, classify)
+
+	task.synchronize()
+	reply:Fire(cells)
+end)
+]])
+
+print("[Facet] installed 9 modules under ReplicatedStorage.Facet")
 return true

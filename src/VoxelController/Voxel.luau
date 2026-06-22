@@ -10,18 +10,46 @@
 local TweenService = game:GetService("TweenService")
 local Enums = require(script.Parent.Parent.Enums)
 
+-- What bucket of Result.Voxels this voxel landed in: Whole (isolated but never sliced), Partial
+-- (sliced debris - the only kind Cleanup ever runs against), or Extra (produced, outside the
+-- hitbox, greedy-meshed, left alone unless you Cleanup it yourself).
 export type Kind = "Whole" | "Partial" | "Extra"
 
+--[=[
+	@interface ShatterSizeConfig
+	@within Voxel
+	.Effects {[string]: any}? -- same shape as ShatterConfig.Effects.
+	.Size number? -- overrides the controller's own sizing rule for just this re-shatter.
+]=]
 export type ShatterSizeConfig = {
 	Effects: { [string]: any }?,
 	Size: number?,
 }
 
+--[=[
+	@class Voxel
+	One produced part, wrapped with the behaviour every `Result.Voxels` entry carries. Every
+	entry in `Result.Voxels.Whole/Partial/Extra` is one of these, not a bare `BasePart`.
+]=]
 export type Voxel = {
 	Instance: BasePart,
 	Kind: Kind,
 	OriginalCFrame: CFrame,
+	--[=[
+		@within Voxel
+		@method Cleanup
+		Runs a Cleanup strategy against this one voxel directly - the same logic Shatter's own
+		`Cleanup` config runs against every `Partial` voxel automatically. `duration` only
+		applies to `Fade`/`Rebuild` (`Destroy` is instant).
+	]=]
 	Cleanup: (self: Voxel, method: (Enums.Cleanup | ((Voxel) -> ())?), duration: number?) -> (),
+	--[=[
+		@within Voxel
+		@method Shatter
+		Only present on `Whole` voxels (a part the hitbox isolated but never sliced). Re-shatters
+		just this part - `config` only accepts `Effects`/`Size`, since there's no hitbox left to
+		detect against; the part itself IS the target.
+	]=]
 	Shatter: ((self: Voxel, config: ShatterSizeConfig?) -> any)?,
 }
 
