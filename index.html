@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Facet</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://mkl48.github.io/Facet/"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docusaurus_tag" content="default"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docsearch:docusaurus_tag" content="default"><meta data-rh="true" property="og:title" content="Facet"><link data-rh="true" rel="icon" href="/Facet/favicon.png"><link data-rh="true" rel="canonical" href="https://mkl48.github.io/Facet/"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/" hreflang="en"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/" hreflang="x-default"><script data-rh="true">function insertBanner(){var n=document.createElement("div");n.id="__docusaurus-base-url-issue-banner-container";n.innerHTML='\n<div id="__docusaurus-base-url-issue-banner" style="border: thick solid red; background-color: rgb(255, 230, 179); margin: 20px; padding: 20px; font-size: 20px;">\n   <p style="font-weight: bold; font-size: 30px;">Your Docusaurus site did not load properly.</p>\n   <p>A very common reason is a wrong site <a href="https://docusaurus.io/docs/docusaurus.config.js/#baseUrl" style="font-weight: bold;">baseUrl configuration</a>.</p>\n   <p>Current configured baseUrl = <span style="font-weight: bold; color: red;">/Facet/</span> </p>\n   <p>We suggest trying baseUrl = <span id="__docusaurus-base-url-issue-banner-suggestion-container" style="font-weight: bold; color: green;"></span></p>\n</div>\n',document.body.prepend(n);var e=document.getElementById("__docusaurus-base-url-issue-banner-suggestion-container"),s=window.location.pathname,o="/"===s.substr(-1)?s:s+"/";e.innerHTML=o}document.addEventListener("DOMContentLoaded",(function(){void 0===window.docusaurus&&insertBanner()}))</script><link rel="stylesheet" href="/Facet/assets/css/styles.ae967cf2.css">
-<script src="/Facet/assets/js/runtime~main.ec25d095.js" defer="defer"></script>
-<script src="/Facet/assets/js/main.3322a752.js" defer="defer"></script>
+<script src="/Facet/assets/js/runtime~main.0fb23e49.js" defer="defer"></script>
+<script src="/Facet/assets/js/main.7e5b368e.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -37,6 +37,10 @@ falling back toward <code>MinimumVoxelSize</code>) or <code>Absolute</code> (a f
 <li><strong>One verb, fully configurable</strong> - <code>Controller:Shatter(Target?, Config)</code>. Omit <code>Hitbox</code>
 entirely to shatter the whole target; include it to scope detection, with <code>HitboxType</code>
 (<code>Whole</code> returns a part untouched, <code>Partial</code> voxelizes whatever&#x27;s detected).</li>
+<li><strong>Indiscriminate destruction</strong> - call <code>Controller:Shatter(Config)</code> with <strong>no <code>Host</code> and no
+Target</strong> - just a <code>Hitbox</code> - and it shatters whatever overlaps that region anywhere in the
+world (or <code>Hitbox.Scope</code>, if you want to restrict the search), with no single Target tying the
+call to one part.</li>
 <li><strong>Greedy meshing</strong> - voxel cells produced outside the hitbox (<code>Result.Voxels.Extra</code>) are
 merged dimension-by-dimension into the fewest boxes that cover them, instead of one part per
 grid cell. Cells you&#x27;re meant to see fragment (<code>Partial</code>, or a no-hitbox <code>Shatter</code>) stay one
@@ -53,10 +57,22 @@ controllers, and any call that only touches one part, skip the Actor round-trip 
 <li><strong>Three-way result split</strong> - <code>Result.Voxels.Whole</code> / <code>.Partial</code> / <code>.Extra</code>, so you always
 know what was isolated whole, what got sliced, and what was produced but fell outside the
 hitbox.</li>
-<li><strong>Composable cleanup</strong> - <code>Enums.Cleanup.Rebuild</code> / <code>Fade</code> / <code>Destroy</code>, or pass your own
-<code>function(voxel) ... end</code>.</li>
+<li><strong>Composable cleanup</strong> - <code>Cleanup = { Method = Enums.Cleanup.Rebuild / Fade / Destroy, Delay = number? }</code>,
+or pass your own <code>{ Method = function(voxel) ... end }</code>.</li>
+<li><strong>Eight Effects</strong> - <code>Explode</code>, <code>Anchored</code>, <code>Unstable</code> (real structural collapse - unanchors
+everything a Shatter call produced, including <code>Extra</code>, so removing a building&#x27;s support
+actually makes it fall), <code>Slice</code> (splits debris either side of a plane apart), <code>Blackhole</code> /
+<code>Whitehole</code> (pull toward / launch away from a point), <code>Scatter</code>, and <code>Shrink</code> - see
+<a href="https://mkl48.github.io/Facet/effects">docs/effects</a>.</li>
+<li><strong>Richer voxels</strong> - every produced <code>Voxel</code> carries <code>OriginalPosition</code>/<code>OriginalOrientation</code>
+(captured before any Effect moved it) and <code>Distance</code> from the Shatter origin, alongside
+<code>Instance</code>/<code>Kind</code>/<code>OriginalCFrame</code>.</li>
+<li><strong>Smoothed material</strong> - plain <code>Plastic</code> voxels come out <code>SmoothPlastic</code> (it reads better once
+chopped into many small cubes); every other Material is left as-is.</li>
 <li><strong>Two runtime modes</strong> - <code>Instant</code> controllers run every <code>Shatter</code> call immediately;
 <code>Timeline</code> controllers queue calls until you call <code>Controller:Start()</code>.</li>
+<li><strong>Global feature flags</strong> - <code>Facet.Configure({ ObjectPooling, Multithreading, GreedyMeshing })</code>
+turns any of the three on/off process-wide, no per-controller wiring needed.</li>
 <li><strong>Two ways to install</strong> - Wally for a Rojo workflow, or a single paste-into-the-command-bar
 installer with no toolchain at all.</li>
 </ul>
@@ -98,8 +114,9 @@ Wall:Shatter({
     },
     Effects = {
         [Enums.Effects.Explode] = { Radius = 12 },
+        [Enums.Effects.Anchored] = false, -- Explode alone doesn&#x27;t unanchor - see Effects below
     },
-    Cleanup = Enums.Cleanup.Fade,
+    Cleanup = { Method = Enums.Cleanup.Fade, Delay = 1.2 },
 }):Next(Enums.Event.NewVoxel):Then(function(result)
     print(#result.Voxels.Partial, &quot;voxels produced&quot;)
 end)
@@ -141,14 +158,36 @@ and you only pass <code>Config</code>:</p>
         [Enums.Effects.Explode] = { Radius = 12 },
         [Enums.Effects.Anchored] = false,
     },
-    Cleanup = Enums.Cleanup.Fade,
-    CleanupDuration = 1.2,
+    Cleanup = { Method = Enums.Cleanup.Fade, Delay = 1.2 },
 })
 </code></pre>
+<p>See <a href="https://mkl48.github.io/Facet/effects">docs/effects</a> for the full Effects reference -
+<code>Explode</code>, <code>Anchored</code>, <code>Unstable</code> (real structural collapse - unanchors everything produced,
+including <code>Extra</code>, so a building actually falls once you cut its support out), <code>Slice</code>
+(splits debris either side of a plane apart), <code>Blackhole</code>/<code>Whitehole</code> (pull toward/launch away
+from a point), and <code>Scatter</code>/<code>Shrink</code>.</p>
 <p>Omit <code>Hitbox</code> entirely and the whole target gets voxelized with no detection step. Every
 produced part lands under <code>workspace._Bin.Voxels.&lt;TargetName&gt;</code> - grouped in a <code>Model</code> named
 after the part it came from - instead of back into wherever the original part lived, so debris
 never pollutes the rest of your place hierarchy.</p>
+<h3 id="indiscriminate-destruction-no-target">Indiscriminate destruction (no Target)</h3>
+<p>Skip <code>Host</code> and the <code>Target</code> argument entirely and <code>Shatter</code> runs against the <code>Hitbox</code> itself -
+whatever overlaps that region gets shattered, regardless of which part it came from:</p>
+<pre><code class="language-lua">local Demolition = Facet.Define({ Type = Enums.ControllerType.Relative, RecommendedVoxelSize = 1 })
+
+Demolition:Shatter({
+    Hitbox = {
+        Size = Vector3.new(24, 24, 24),
+        CFrame = explosionCFrame,
+        QueryType = Enums.QueryType.Sphere,
+        Scope = workspace.City, -- optional - defaults to the whole workspace
+    },
+    Cleanup = { Method = Enums.Cleanup.Destroy },
+})
+</code></pre>
+<p>A <code>Hitbox</code> is required here - there&#x27;s no Target to fall back to detecting against. <code>Scope</code>
+restricts the search to one instance&#x27;s descendants; omit it to scan the whole <code>workspace</code>.
+<code>Result.Instance</code> is <code>nil</code> for this form, since no single Target/Host exists.</p>
 <h3 id="reading-the-result">Reading the Result</h3>
 <p><code>Shatter</code> returns a <a href="https://mkl48.github.io/Facet/api/PendingResult"><code>PendingResult</code></a> you
 chain off of with <code>:Next(Event):Then(callback)</code>:</p>
@@ -162,14 +201,19 @@ chain off of with <code>:Next(Event):Then(callback)</code>:</p>
 </code></pre>
 <table><thead><tr><th><code>Result</code> field</th><th>Type</th><th>Fires on</th></tr></thead><tbody><tr><td><code>Voxels.Whole</code></td><td><code>{Voxel}</code></td><td><code>NewVoxel</code> - parts the hitbox isolated but never sliced (<code>HitboxType.Whole</code> only)</td></tr><tr><td><code>Voxels.Partial</code></td><td><code>{Voxel}</code></td><td><code>NewVoxel</code> - the actual blast debris; the only bucket <code>Cleanup</code> ever touches</td></tr><tr><td><code>Voxels.Extra</code></td><td><code>{Voxel}</code></td><td><code>NewVoxel</code> - produced but outside the hitbox, greedy-meshed into a handful of boxes, left alone</td></tr><tr><td><code>Instance</code></td><td><code>Instance?</code></td><td>always - the <code>Target</code>/<code>Host</code> this call ran against</td></tr></tbody></table>
 <p>Each entry in every bucket is a <a href="https://mkl48.github.io/Facet/api/Voxel"><code>Voxel</code></a>, not a bare
-<code>BasePart</code> - it wraps the produced part with <code>:Cleanup(method, duration?)</code> (run the same
+<code>BasePart</code> - alongside <code>Instance</code> and <code>Kind</code>, it carries <code>OriginalCFrame</code>/<code>OriginalPosition</code>/
+<code>OriginalOrientation</code> (captured the instant it was created, before any Effect moved it) and
+<code>Distance</code> (from the Shatter origin), plus <code>:Cleanup(method, duration?)</code> (run the same
 Rebuild/Fade/Destroy/custom logic against just that one part) and, on <code>Whole</code> voxels only,
 <code>:Shatter(config?)</code> to re-shatter that exact part with no hitbox needed.</p>
 <h2 id="public-api-cheat-sheet">Public API cheat-sheet</h2>
 <pre><code class="language-lua">Facet.Define(config: DefineConfig): VoxelController
+Facet.Configure(overrides: { ObjectPooling: boolean?, Multithreading: boolean?, GreedyMeshing: boolean? }): ()
 Facet.Enums: { ControllerType, RuntimeType, HitboxType, QueryType, Effects, Cleanup, Event }
 
 VoxelController:Shatter(target: Instance?, config: ShatterConfig): PendingResult
+-- target is also optional when config.Hitbox is set and the controller has no Host - see
+-- &quot;Indiscriminate destruction&quot; above.
 VoxelController:Start(): ()   -- flushes a Timeline controller&#x27;s queue
 VoxelController:Destroy(): () -- clears anything still queued
 
