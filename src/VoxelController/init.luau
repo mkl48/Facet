@@ -27,26 +27,6 @@ local Config = ConfigModule.Config
 local Voxel = VoxelModule.new
 local applyEffects = VoxelModule.applyEffects
 
--- Every Chunk assembly's pieces share this CollisionGroup, set non-collidable with itself, so
--- welded siblings (which touch at shared grid faces) don't fight each other for contact space -
--- without it, the physics solver treats those touching unanchored parts as overlapping and fires
--- a huge separating impulse the instant they're created, which spikes AssemblyLinearVelocity past
--- BreakSpeed and shreds the assembly into shrapnel before gravity ever gets to make it fall as one
--- piece. CanTouch stays true (set in _emitCells) so impact detection against the world still works.
-local CHUNK_COLLISION_GROUP = "Facet_Chunk"
-local chunkCollisionGroupReady = false
-local function ensureChunkCollisionGroup()
-	if chunkCollisionGroupReady then
-		return
-	end
-	local PhysicsService = game:GetService("PhysicsService")
-	if not PhysicsService:IsCollisionGroupRegistered(CHUNK_COLLISION_GROUP) then
-		PhysicsService:RegisterCollisionGroup(CHUNK_COLLISION_GROUP)
-	end
-	PhysicsService:CollisionGroupSetCollidable(CHUNK_COLLISION_GROUP, CHUNK_COLLISION_GROUP, false)
-	chunkCollisionGroupReady = true
-end
-
 -- Every voxel produced from slicing a part lands under workspace._Bin.Voxels.<PartName>,
 -- grouped by the original part's Name, instead of back into wherever the part used to live -
 -- keeps debris out of the place hierarchy the rest of the game depends on, and keeps every
@@ -406,10 +386,8 @@ function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { Vox
 	for _, voxel in extra do
 		table.insert(pieces, voxel.Instance)
 	end
-	ensureChunkCollisionGroup()
 	for _, piece in pieces do
 		piece.Anchored = false
-		piece.CollisionGroup = CHUNK_COLLISION_GROUP
 	end
 	if #pieces < 2 then
 		return

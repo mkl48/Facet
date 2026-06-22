@@ -58,8 +58,14 @@ local function runInline(job: Job): { Voxelize.MergedVoxel }
 	return Voxelize.computeCells(job.Grid, classify, job.GreedyMeshing)
 end
 
+-- How long to wait for every worker in a freshly built pool to report Ready before giving up
+-- and falling back to single-threaded voxelization. Each worker only needs to run its own
+-- top-level script body once - if it hasn't managed that in 5 seconds something is genuinely
+-- wrong (not just a slow frame), so this isn't tuned to be tight against normal startup time.
+local POOL_READY_TIMEOUT = 5
+
 local function buildPool(): { Actor }?
-	local ok, actors = pcall(function()
+	local ok, result = pcall(function()
 		-- RunContext can't be set from a live game script (Studio/Plugin-only capability) -
 		-- so we ship two pre-baked templates instead of mutating one at runtime. See
 		-- default.project.json / scripts/build-installer.luau for where each gets its RunContext.
@@ -67,22 +73,49 @@ local function buildPool(): { Actor }?
 		local template = (script :: Instance):FindFirstChild(templateName) :: Script?
 		assert(template, `Facet Workers: missing "{templateName}" template`)
 		local built = {}
+		local readyEvents: { BindableEvent } = {}
 		for i = 1, POOL_SIZE do
 			local actor = Instance.new("Actor")
 			actor.Name = "FacetWorker" .. i
+
 			local worker = template:Clone()
+			local ready = Instance.new("BindableEvent")
+			ready.Name = "Ready"
+			ready.Parent = worker
+
 			worker.Enabled = true
 			worker.Parent = actor
 			actor.Parent = script
+
 			built[i] = actor
+			readyEvents[i] = ready
 		end
+
+		-- A newly parented Script doesn't start running synchronously - it begins on a later
+		-- resumption, after this function has already returned to the caller. Block here until
+		-- every worker has actually reached its BindToMessageParallel call (see Worker.server.luau),
+		-- so the caller never dispatches a job to a worker that isn't listening yet.
+		for _, ready in readyEvents do
+			local fired = false
+			local connection = ready.Event:Once(function()
+				fired = true
+			end)
+			local deadline = os.clock() + POOL_READY_TIMEOUT
+			while not fired and os.clock() < deadline do
+				task.wait()
+			end
+			connection:Disconnect()
+			ready:Destroy()
+			assert(fired, "Facet Workers: a worker never signaled Ready in time")
+		end
+
 		return built
 	end)
 	if not ok then
-		warn("[Facet] Worker pool failed to start, falling back to single-threaded voxelization: " .. tostring(actors))
+		warn("[Facet] Worker pool failed to start, falling back to single-threaded voxelization: " .. tostring(result))
 		return nil
 	end
-	return actors
+	return result
 end
 
 local function getPool(): { Actor }?

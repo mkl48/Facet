@@ -31,3 +31,14 @@ actor:BindToMessageParallel("ComputeCells", function(reply: BindableEvent, grid:
 	task.synchronize()
 	reply:Fire(cells)
 end)
+
+-- A freshly cloned/parented Script doesn't start running the instant Workers.computeAsync()
+-- sets worker.Parent = actor - it begins on a later resumption, after the call that builds the
+-- pool has already returned. Without this, the very first SendMessage to a brand new pool can
+-- arrive before BindToMessageParallel above has even run, gets silently dropped, and the caller
+-- hangs forever on done.Event:Wait() with no reply ever coming back. Firing Ready here, right
+-- after binding, lets buildPool() confirm every worker is actually listening before it's used.
+local ready = script:FindFirstChild("Ready")
+if ready then
+	(ready :: BindableEvent):Fire()
+end

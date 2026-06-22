@@ -415,26 +415,6 @@ local Config = ConfigModule.Config
 local Voxel = VoxelModule.new
 local applyEffects = VoxelModule.applyEffects
 
--- Every Chunk assembly's pieces share this CollisionGroup, set non-collidable with itself, so
--- welded siblings (which touch at shared grid faces) don't fight each other for contact space -
--- without it, the physics solver treats those touching unanchored parts as overlapping and fires
--- a huge separating impulse the instant they're created, which spikes AssemblyLinearVelocity past
--- BreakSpeed and shreds the assembly into shrapnel before gravity ever gets to make it fall as one
--- piece. CanTouch stays true (set in _emitCells) so impact detection against the world still works.
-local CHUNK_COLLISION_GROUP = "Facet_Chunk"
-local chunkCollisionGroupReady = false
-local function ensureChunkCollisionGroup()
-	if chunkCollisionGroupReady then
-		return
-	end
-	local PhysicsService = game:GetService("PhysicsService")
-	if not PhysicsService:IsCollisionGroupRegistered(CHUNK_COLLISION_GROUP) then
-		PhysicsService:RegisterCollisionGroup(CHUNK_COLLISION_GROUP)
-	end
-	PhysicsService:CollisionGroupSetCollidable(CHUNK_COLLISION_GROUP, CHUNK_COLLISION_GROUP, false)
-	chunkCollisionGroupReady = true
-end
-
 -- Every voxel produced from slicing a part lands under workspace._Bin.Voxels.<PartName>,
 -- grouped by the original part's Name, instead of back into wherever the part used to live -
 -- keeps debris out of the place hierarchy the rest of the game depends on, and keeps every
@@ -794,10 +774,8 @@ function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { Vox
 	for _, voxel in extra do
 		table.insert(pieces, voxel.Instance)
 	end
-	ensureChunkCollisionGroup()
 	for _, piece in pieces do
 		piece.Anchored = false
-		piece.CollisionGroup = CHUNK_COLLISION_GROUP
 	end
 	if #pieces < 2 then
 		return
@@ -1910,8 +1888,14 @@ local function runInline(job: Job): { Voxelize.MergedVoxel }
 	return Voxelize.computeCells(job.Grid, classify, job.GreedyMeshing)
 end
 
+-- How long to wait for every worker in a freshly built pool to report Ready before giving up
+-- and falling back to single-threaded voxelization. Each worker only needs to run its own
+-- top-level script body once - if it hasn't managed that in 5 seconds something is genuinely
+-- wrong (not just a slow frame), so this isn't tuned to be tight against normal startup time.
+local POOL_READY_TIMEOUT = 5
+
 local function buildPool(): { Actor }?
-	local ok, actors = pcall(function()
+	local ok, result = pcall(function()
 		-- RunContext can't be set from a live game script (Studio/Plugin-only capability) -
 		-- so we ship two pre-baked templates instead of mutating one at runtime. See
 		-- default.project.json / scripts/build-installer.luau for where each gets its RunContext.
@@ -1919,22 +1903,49 @@ local function buildPool(): { Actor }?
 		local template = (script :: Instance):FindFirstChild(templateName) :: Script?
 		assert(template, `Facet Workers: missing "{templateName}" template`)
 		local built = {}
+		local readyEvents: { BindableEvent } = {}
 		for i = 1, POOL_SIZE do
 			local actor = Instance.new("Actor")
 			actor.Name = "FacetWorker" .. i
+
 			local worker = template:Clone()
+			local ready = Instance.new("BindableEvent")
+			ready.Name = "Ready"
+			ready.Parent = worker
+
 			worker.Enabled = true
 			worker.Parent = actor
 			actor.Parent = script
+
 			built[i] = actor
+			readyEvents[i] = ready
 		end
+
+		-- A newly parented Script doesn't start running synchronously - it begins on a later
+		-- resumption, after this function has already returned to the caller. Block here until
+		-- every worker has actually reached its BindToMessageParallel call (see Worker.server.luau),
+		-- so the caller never dispatches a job to a worker that isn't listening yet.
+		for _, ready in readyEvents do
+			local fired = false
+			local connection = ready.Event:Once(function()
+				fired = true
+			end)
+			local deadline = os.clock() + POOL_READY_TIMEOUT
+			while not fired and os.clock() < deadline do
+				task.wait()
+			end
+			connection:Disconnect()
+			ready:Destroy()
+			assert(fired, "Facet Workers: a worker never signaled Ready in time")
+		end
+
 		return built
 	end)
 	if not ok then
-		warn("[Facet] Worker pool failed to start, falling back to single-threaded voxelization: " .. tostring(actors))
+		warn("[Facet] Worker pool failed to start, falling back to single-threaded voxelization: " .. tostring(result))
 		return nil
 	end
-	return actors
+	return result
 end
 
 local function getPool(): { Actor }?
@@ -2030,6 +2041,17 @@ actor:BindToMessageParallel("ComputeCells", function(reply: BindableEvent, grid:
 	task.synchronize()
 	reply:Fire(cells)
 end)
+
+-- A freshly cloned/parented Script doesn't start running the instant Workers.computeAsync()
+-- sets worker.Parent = actor - it begins on a later resumption, after the call that builds the
+-- pool has already returned. Without this, the very first SendMessage to a brand new pool can
+-- arrive before BindToMessageParallel above has even run, gets silently dropped, and the caller
+-- hangs forever on done.Event:Wait() with no reply ever coming back. Firing Ready here, right
+-- after binding, lets buildPool() confirm every worker is actually listening before it's used.
+local ready = script:FindFirstChild("Ready")
+if ready then
+	(ready :: BindableEvent):Fire()
+end
 ]], "Server")
 inst("Script", "WorkerClient", _4, [[
 -- Facet
@@ -2065,6 +2087,17 @@ actor:BindToMessageParallel("ComputeCells", function(reply: BindableEvent, grid:
 	task.synchronize()
 	reply:Fire(cells)
 end)
+
+-- A freshly cloned/parented Script doesn't start running the instant Workers.computeAsync()
+-- sets worker.Parent = actor - it begins on a later resumption, after the call that builds the
+-- pool has already returned. Without this, the very first SendMessage to a brand new pool can
+-- arrive before BindToMessageParallel above has even run, gets silently dropped, and the caller
+-- hangs forever on done.Event:Wait() with no reply ever coming back. Firing Ready here, right
+-- after binding, lets buildPool() confirm every worker is actually listening before it's used.
+local ready = script:FindFirstChild("Ready")
+if ready then
+	(ready :: BindableEvent):Fire()
+end
 ]], "Client")
 
 print("[Facet] installed 12 modules under ReplicatedStorage.Facet")
