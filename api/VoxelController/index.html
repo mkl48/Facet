@@ -10,8 +10,8 @@ and method below has real Intellisense."><meta data-rh="true" property="og:descr
 classify them against a [HitboxConfig], voxelize, apply Effects, run Cleanup, and fire a
 [Result] through the [PendingResult] chain. Typed explicitly (never `any`) so every field
 and method below has real Intellisense."><link data-rh="true" rel="icon" href="/Facet/favicon.png"><link data-rh="true" rel="canonical" href="https://mkl48.github.io/Facet/api/VoxelController"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/api/VoxelController" hreflang="en"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/api/VoxelController" hreflang="x-default"><link rel="stylesheet" href="/Facet/assets/css/styles.ae967cf2.css">
-<script src="/Facet/assets/js/runtime~main.f343e9be.js" defer="defer"></script>
-<script src="/Facet/assets/js/main.c41c93ba.js" defer="defer"></script>
+<script src="/Facet/assets/js/runtime~main.9866d9f4.js" defer="defer"></script>
+<script src="/Facet/assets/js/main.ecadb68b.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -24,7 +24,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
   <a href="/Facet/api/PendingResult#Result">Result</a> through the <a href="/Facet/api/PendingResult">PendingResult</a> chain. Typed explicitly (never <code>any</code>) so every field
   and method below has real Intellisense.
 </p>
-</div></header><h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="types">Types<a href="#types" class="hash-link" aria-label="Direct link to Types" title="Direct link to Types" translate="no">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="HitboxConfig"><code style="text-decoration:none">HitboxConfig</code><a href="#HitboxConfig" class="hash-link" aria-label="Direct link to HitboxConfig" title="Direct link to HitboxConfig" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L72"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>HitboxConfig<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>Size<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="https://developer.roblox.com/en-us/api-reference/datatype/Vector3" target="_blank" rel="noopener noreferrer">Vector3?<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" x="0px" y="0px" viewBox="0 0 100 100" width="15" height="15" class="icon outbound" style="color:gray;vertical-align:middle;margin-left:2px"><path fill="currentColor" d="M18.8,85.1h56l0,0c2.2,0,4-1.8,4-4v-32h-8v28h-48v-48h28v-8h-32l0,0c-2.2,0-4,1.8-4,4v56C14.8,83.3,16.6,85.1,18.8,85.1z"></path> <polygon fill="currentColor" points="45.7,48.7 51.3,54.3 77.2,28.5 77.2,37.2 85.2,37.2 85.2,14.9 62.8,14.9 62.8,22.9 71.5,22.9"></polygon></svg></a></code><span class="inlineDescription_G7Er">-- <span>
+</div></header><h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="types">Types<a href="#types" class="hash-link" aria-label="Direct link to Types" title="Direct link to Types" translate="no">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="HitboxConfig"><code style="text-decoration:none">HitboxConfig</code><a href="#HitboxConfig" class="hash-link" aria-label="Direct link to HitboxConfig" title="Direct link to HitboxConfig" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L92"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>HitboxConfig<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>Size<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="https://developer.roblox.com/en-us/api-reference/datatype/Vector3" target="_blank" rel="noopener noreferrer">Vector3?<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" x="0px" y="0px" viewBox="0 0 100 100" width="15" height="15" class="icon outbound" style="color:gray;vertical-align:middle;margin-left:2px"><path fill="currentColor" d="M18.8,85.1h56l0,0c2.2,0,4-1.8,4-4v-32h-8v28h-48v-48h28v-8h-32l0,0c-2.2,0-4,1.8-4,4v56C14.8,83.3,16.6,85.1,18.8,85.1z"></path> <polygon fill="currentColor" points="45.7,48.7 51.3,54.3 77.2,28.5 77.2,37.2 85.2,37.2 85.2,14.9 62.8,14.9 62.8,22.9 71.5,22.9"></polygon></svg></a></code><span class="inlineDescription_G7Er">-- <span>
 <p>box/region extents, in studs, centered on <code>CFrame</code>. Ignored by <code>Raycast</code>.</p>
 </span></span></div><div><code>CFrame<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="https://developer.roblox.com/en-us/api-reference/datatype/CFrame" target="_blank" rel="noopener noreferrer">CFrame?<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" x="0px" y="0px" viewBox="0 0 100 100" width="15" height="15" class="icon outbound" style="color:gray;vertical-align:middle;margin-left:2px"><path fill="currentColor" d="M18.8,85.1h56l0,0c2.2,0,4-1.8,4-4v-32h-8v28h-48v-48h28v-8h-32l0,0c-2.2,0-4,1.8-4,4v56C14.8,83.3,16.6,85.1,18.8,85.1z"></path> <polygon fill="currentColor" points="45.7,48.7 51.3,54.3 77.2,28.5 77.2,37.2 85.2,37.2 85.2,14.9 62.8,14.9 62.8,22.9 71.5,22.9"></polygon></svg></a></code><span class="inlineDescription_G7Er">-- <span>
 <p>where the hitbox sits in the world. Defaults to <code>CFrame.new()</code> (the origin) if omitted.</p>
@@ -42,11 +42,11 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
 <p>reserved for a future "clone the hitbox as a real part" helper; not read by Shatter today.</p>
 </span></span></div><div><code>Scope<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="https://developer.roblox.com/en-us/api-reference/datatype/Instance" target="_blank" rel="noopener noreferrer">Instance?<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" x="0px" y="0px" viewBox="0 0 100 100" width="15" height="15" class="icon outbound" style="color:gray;vertical-align:middle;margin-left:2px"><path fill="currentColor" d="M18.8,85.1h56l0,0c2.2,0,4-1.8,4-4v-32h-8v28h-48v-48h28v-8h-32l0,0c-2.2,0-4,1.8-4,4v56C14.8,83.3,16.6,85.1,18.8,85.1z"></path> <polygon fill="currentColor" points="45.7,48.7 51.3,54.3 77.2,28.5 77.2,37.2 85.2,37.2 85.2,14.9 62.8,14.9 62.8,22.9 71.5,22.9"></polygon></svg></a></code><span class="inlineDescription_G7Er">-- <span>
 <p>only read when <code>Shatter</code> is called with no Target and no Host (indiscriminate destruction) - restricts the workspace-wide query to this instance's descendants. Defaults to the whole <code>workspace</code>. Ignored otherwise (a Target/Host already scopes the search).</p>
-</span></span></div></div><code>}</code></div><div></div><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="CleanupConfig"><code style="text-decoration:none">CleanupConfig</code><a href="#CleanupConfig" class="hash-link" aria-label="Direct link to CleanupConfig" title="Direct link to CleanupConfig" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L90"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>CleanupConfig<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>Method<!-- -->: </code><code class="purple_ieR2">(</code><code class="blue_P4bS">Enums.Cleanup</code><code class="op_lSLc"> | </code><code class="green_DgR4">(</code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/Facet/api/Voxel">Voxel</a></code><code class="green_DgR4">)</code><code class="green_DgR4"> → </code><code class="green_DgR4">(</code><code class="green_DgR4">)</code><code class="purple_ieR2">)</code><code class="blue_P4bS">?</code><span class="inlineDescription_G7Er">-- <span>
+</span></span></div></div><code>}</code></div><div></div><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="CleanupConfig"><code style="text-decoration:none">CleanupConfig</code><a href="#CleanupConfig" class="hash-link" aria-label="Direct link to CleanupConfig" title="Direct link to CleanupConfig" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L110"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>CleanupConfig<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>Method<!-- -->: </code><code class="purple_ieR2">(</code><code class="blue_P4bS">Enums.Cleanup</code><code class="op_lSLc"> | </code><code class="green_DgR4">(</code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/Facet/api/Voxel">Voxel</a></code><code class="green_DgR4">)</code><code class="green_DgR4"> → </code><code class="green_DgR4">(</code><code class="green_DgR4">)</code><code class="purple_ieR2">)</code><code class="blue_P4bS">?</code><span class="inlineDescription_G7Er">-- <span>
 <p><code>Rebuild</code> | <code>Fade</code> | <code>Destroy</code>, or your own <code>function(voxel) ... end</code>. Only ever runs against <code>Result.Voxels.Partial</code>.</p>
 </span></span></div><div><code>Delay<!-- -->: </code><code class="blue_P4bS">number?</code><span class="inlineDescription_G7Er">-- <span>
 <p>seconds the Cleanup tween takes (<code>Fade</code>/<code>Rebuild</code> only - <code>Destroy</code> is instant). Defaults to 0.5 for Fade, 0.6 for Rebuild.</p>
-</span></span></div></div><code>}</code></div><div></div><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="DefineConfig"><code style="text-decoration:none">DefineConfig</code><a href="#DefineConfig" class="hash-link" aria-label="Direct link to DefineConfig" title="Direct link to DefineConfig" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L119"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>DefineConfig<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>Type<!-- -->: </code><code class="blue_P4bS">Enums.ControllerType</code><span class="inlineDescription_G7Er">-- <span>
+</span></span></div></div><code>}</code></div><div></div><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="DefineConfig"><code style="text-decoration:none">DefineConfig</code><a href="#DefineConfig" class="hash-link" aria-label="Direct link to DefineConfig" title="Direct link to DefineConfig" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L139"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>DefineConfig<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>Type<!-- -->: </code><code class="blue_P4bS">Enums.ControllerType</code><span class="inlineDescription_G7Er">-- <span>
 <p><code>Relative</code> (dynamic sizing, requires <code>RecommendedVoxelSize</code>) or <code>Absolute</code> (fixed <code>VoxelSize</code>). Required.</p>
 </span></span></div><div><code>RuntimeType<!-- -->: </code><code class="blue_P4bS">Enums.RuntimeType?</code><span class="inlineDescription_G7Er">-- <span>
 <p><code>Instant</code> (default, runs every Shatter immediately) or <code>Timeline</code> (queues calls until <code>:Start()</code>).</p>
@@ -60,7 +60,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
 <p>reserved for swapping the slicing backend; not read by Shatter today.</p>
 </span></span></div><div><code>VoxelSize<!-- -->: </code><code class="blue_P4bS">number?</code><span class="inlineDescription_G7Er">-- <span>
 <p>Absolute only. The fixed cube size every voxel is sliced to. Required for <code>Absolute</code>.</p>
-</span></span></div></div><code>}</code></div><div></div><h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="functions">Functions<a href="#functions" class="hash-link" aria-label="Direct link to Functions" title="Direct link to Functions" translate="no">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="Shatter"><code style="text-decoration:none">Shatter</code><a href="#Shatter" class="hash-link" aria-label="Direct link to Shatter" title="Direct link to Shatter" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L604"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>VoxelController<!-- -->:</code><code class="green_DgR4">Shatter</code><code>(</code><div class="inset_uKQm"><div><code>a<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="https://developer.roblox.com/en-us/api-reference/datatype/Instance" target="_blank" rel="noopener noreferrer">Instance<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" x="0px" y="0px" viewBox="0 0 100 100" width="15" height="15" class="icon outbound" style="color:gray;vertical-align:middle;margin-left:2px"><path fill="currentColor" d="M18.8,85.1h56l0,0c2.2,0,4-1.8,4-4v-32h-8v28h-48v-48h28v-8h-32l0,0c-2.2,0-4,1.8-4,4v56C14.8,83.3,16.6,85.1,18.8,85.1z"></path> <polygon fill="currentColor" points="45.7,48.7 51.3,54.3 77.2,28.5 77.2,37.2 85.2,37.2 85.2,14.9 62.8,14.9 62.8,22.9 71.5,22.9"></polygon></svg></a></code><code class="op_lSLc"> | </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/Facet/api/VoxelController#ShatterConfig">ShatterConfig</a></code><code>,</code><span class="inlineDescription_G7Er">-- <span>
+</span></span></div></div><code>}</code></div><div></div><h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="functions">Functions<a href="#functions" class="hash-link" aria-label="Direct link to Functions" title="Direct link to Functions" translate="no">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="Shatter"><code style="text-decoration:none">Shatter</code><a href="#Shatter" class="hash-link" aria-label="Direct link to Shatter" title="Direct link to Shatter" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L626"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>VoxelController<!-- -->:</code><code class="green_DgR4">Shatter</code><code>(</code><div class="inset_uKQm"><div><code>a<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="https://developer.roblox.com/en-us/api-reference/datatype/Instance" target="_blank" rel="noopener noreferrer">Instance<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" x="0px" y="0px" viewBox="0 0 100 100" width="15" height="15" class="icon outbound" style="color:gray;vertical-align:middle;margin-left:2px"><path fill="currentColor" d="M18.8,85.1h56l0,0c2.2,0,4-1.8,4-4v-32h-8v28h-48v-48h28v-8h-32l0,0c-2.2,0-4,1.8-4,4v56C14.8,83.3,16.6,85.1,18.8,85.1z"></path> <polygon fill="currentColor" points="45.7,48.7 51.3,54.3 77.2,28.5 77.2,37.2 85.2,37.2 85.2,14.9 62.8,14.9 62.8,22.9 71.5,22.9"></polygon></svg></a></code><code class="op_lSLc"> | </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/Facet/api/VoxelController#ShatterConfig">ShatterConfig</a></code><code>,</code><span class="inlineDescription_G7Er">-- <span>
 <p>a Target when the controller has no Host, otherwise the ShatterConfig directly.</p>
 </span></span></div><div><code>b<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/Facet/api/VoxelController#ShatterConfig">ShatterConfig?</a></code><span class="inlineDescription_G7Er">-- <span>
 <p>the config, when <code>a</code> was a Target.</p>
@@ -84,12 +84,12 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
   whole <code>workspace</code>) directly and shatters whatever it finds, regardless of which part it came
   from. <code>Result.Instance</code> is <code>nil</code> for this form, since no one Target/Host exists.
 </p>
-</div><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="Start"><code style="text-decoration:none">Start</code><a href="#Start" class="hash-link" aria-label="Direct link to Start" title="Direct link to Start" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L638"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>VoxelController<!-- -->:</code><code class="green_DgR4">Start</code><code>(</code><code>) → </code><code>(</code><code>)</code></div><div>
+</div><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="Start"><code style="text-decoration:none">Start</code><a href="#Start" class="hash-link" aria-label="Direct link to Start" title="Direct link to Start" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L660"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>VoxelController<!-- -->:</code><code class="green_DgR4">Start</code><code>(</code><code>) → </code><code>(</code><code>)</code></div><div>
 <p>
   Flushes the <code>Timeline</code> queue in call order. No-op for <code>Instant</code> controllers - they never queue,
   every <code>:Shatter()</code> call already ran by the time it returns.
 </p>
-</div><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="Destroy"><code style="text-decoration:none">Destroy</code><a href="#Destroy" class="hash-link" aria-label="Direct link to Destroy" title="Direct link to Destroy" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L653"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>VoxelController<!-- -->:</code><code class="green_DgR4">Destroy</code><code>(</code><code>) → </code><code>(</code><code>)</code></div><div>
+</div><div class="divider_rE5g"></div><h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="Destroy"><code style="text-decoration:none">Destroy</code><a href="#Destroy" class="hash-link" aria-label="Direct link to Destroy" title="Direct link to Destroy" translate="no">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/mkl48/Facet/blob/master/src/VoxelController/init.luau#L675"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>VoxelController<!-- -->:</code><code class="green_DgR4">Destroy</code><code>(</code><code>) → </code><code>(</code><code>)</code></div><div>
 <p>
   Clears any queued <code>Timeline</code> jobs that haven't run yet. Doesn't touch parts already produced
   by past <code>:Shatter()</code> calls - those live on independently under <code>workspace._Bin.Voxels</code>.
@@ -119,7 +119,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
             ],
             &quot;function_type&quot;: &quot;method&quot;,
             &quot;source&quot;: {
-                &quot;line&quot;: 604,
+                &quot;line&quot;: 626,
                 &quot;path&quot;: &quot;src/VoxelController/init.luau&quot;
             }
         },
@@ -130,7 +130,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
             &quot;returns&quot;: [],
             &quot;function_type&quot;: &quot;method&quot;,
             &quot;source&quot;: {
-                &quot;line&quot;: 638,
+                &quot;line&quot;: 660,
                 &quot;path&quot;: &quot;src/VoxelController/init.luau&quot;
             }
         },
@@ -141,7 +141,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
             &quot;returns&quot;: [],
             &quot;function_type&quot;: &quot;method&quot;,
             &quot;source&quot;: {
-                &quot;line&quot;: 653,
+                &quot;line&quot;: 675,
                 &quot;path&quot;: &quot;src/VoxelController/init.luau&quot;
             }
         }
@@ -199,7 +199,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
                 }
             ],
             &quot;source&quot;: {
-                &quot;line&quot;: 72,
+                &quot;line&quot;: 92,
                 &quot;path&quot;: &quot;src/VoxelController/init.luau&quot;
             }
         },
@@ -219,7 +219,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
                 }
             ],
             &quot;source&quot;: {
-                &quot;line&quot;: 90,
+                &quot;line&quot;: 110,
                 &quot;path&quot;: &quot;src/VoxelController/init.luau&quot;
             }
         },
@@ -244,7 +244,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
                 }
             ],
             &quot;source&quot;: {
-                &quot;line&quot;: 102,
+                &quot;line&quot;: 122,
                 &quot;path&quot;: &quot;src/VoxelController/init.luau&quot;
             }
         },
@@ -289,7 +289,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
                 }
             ],
             &quot;source&quot;: {
-                &quot;line&quot;: 119,
+                &quot;line&quot;: 139,
                 &quot;path&quot;: &quot;src/VoxelController/init.luau&quot;
             }
         }
@@ -297,7 +297,7 @@ and method below has real Intellisense."><link data-rh="true" rel="icon" href="/
     &quot;name&quot;: &quot;VoxelController&quot;,
     &quot;desc&quot;: &quot;Returned by [Facet.Define]. Owns one Shatter pipeline: resolve candidate parts, optionally\nclassify them against a [HitboxConfig], voxelize, apply Effects, run Cleanup, and fire a\n[Result] through the [PendingResult] chain. Typed explicitly (never `any`) so every field\nand method below has real Intellisense.&quot;,
     &quot;source&quot;: {
-        &quot;line&quot;: 136,
+        &quot;line&quot;: 156,
         &quot;path&quot;: &quot;src/VoxelController/init.luau&quot;
     }
 }</pre></details></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#types" class="table-of-contents__link toc-highlight">Types</a><ul><li><a href="#CleanupConfig" class="table-of-contents__link toc-highlight">CleanupConfig</a></li><li><a href="#DefineConfig" class="table-of-contents__link toc-highlight">DefineConfig</a></li><li><a href="#HitboxConfig" class="table-of-contents__link toc-highlight">HitboxConfig</a></li><li><a href="#ShatterConfig" class="table-of-contents__link toc-highlight">ShatterConfig</a></li></ul></li><li><a href="#functions" class="table-of-contents__link toc-highlight">Functions</a><ul><li><a href="#Destroy" class="table-of-contents__link toc-highlight">:Destroy</a></li><li><a href="#Shatter" class="table-of-contents__link toc-highlight">:Shatter</a></li><li><a href="#Start" class="table-of-contents__link toc-highlight">:Start</a></li></ul></li></ul></div></div></div></div></main></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 mkl48. Built with Moonwave.</div></div></div></footer></div>
