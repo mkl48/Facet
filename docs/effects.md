@@ -27,7 +27,7 @@ comes out anchored too - and an anchored part ignores `AssemblyLinearVelocity` e
 `Explode`/`Whitehole`/`Scatter` silently do nothing until something unanchors the part. Every
 Effect below that gives a voxel velocity sets `Anchored = false` on it for you, **except**
 `Explode` itself (it only sets velocity - pair it with `Anchored = false` explicitly, or use
-`Unstable`/`Whitehole`/`Scatter` instead, which unanchor on their own).
+`Chunk`/`Whitehole`/`Scatter` instead, which unanchor on their own).
 
 ## Reference
 
@@ -35,27 +35,40 @@ Effect below that gives a voxel velocity sets `Anchored = false` on it for you, 
 
 Pushes the voxel directly away from the Shatter origin (the hitbox center, or the explicit point
 for indiscriminate destruction) at `Radius` studs/sec. Does **not** unanchor the part - pair it
-with `Anchored = false` or `Unstable = true`.
+with `Anchored = false` or `Chunk = true`.
 
 ### `Anchored = boolean`
 
 Sets the produced part's `Anchored` directly, overriding whatever the original part's `Anchored`
-was. Runs after every other Effect's own Anchored writes if it's iterated last, so don't combine
-it with `Unstable` unless you want `Anchored`'s value to be the one that sticks.
+was. `Chunk` unanchors on its own regardless of this key, so combining the two only matters if
+you want `Anchored = true` to win and keep the assembly frozen in place.
 
-### `Unstable = boolean`
+### `Chunk = boolean | { BreakSpeed: number?, BreakRadius: number? }`
 
 ```lua
-Effects = { [Enums.Effects.Unstable] = true }
+Effects = { [Enums.Effects.Chunk] = true }
+-- or, tuned:
+Effects = { [Enums.Effects.Chunk] = { BreakSpeed = 30, BreakRadius = 6 } }
 ```
 
-Unconditionally unanchors **every** produced voxel (`Partial` and `Extra` alike) and gives it a
-small random spin, regardless of `Anchored` elsewhere in the same call or the original part's own
-state. This is the one to reach for when you want an actual structural collapse: cut the bottom
-floor out of a building with `Unstable = true` and the remaining `Extra` geometry above it has
-nothing left holding it up - once unanchored, gravity does the rest and it falls on its own,
-no custom physics needed. Combine it with `Explode`/`Slice` for a more dramatic initial kick
-before gravity takes over.
+This is the one to reach for when you want an actual structural collapse, not just debris flying
+everywhere. Every voxel one Shatter call produced (`Partial` *and* `Extra`) gets welded together
+into a single unanchored rigid assembly - one piece, physically - instead of every tiny voxel
+tumbling apart on its own. Cut the bottom floor out of a building with `Chunk = true` and the
+remaining `Extra` geometry above it has nothing left holding it up: it falls and lands **as one
+piece**, the way an actual building section would.
+
+It doesn't stay one rigid lump forever, though - when the assembly's relative impact speed
+against whatever it lands on reaches `BreakSpeed` studs/sec (default `40`), the weld at that
+contact point breaks, detaching that voxel *and* every other still-welded voxel within
+`BreakRadius` studs of it (default `4`) - so a hard enough landing fractures the assembly into a
+handful of smaller chunks, while a soft landing leaves it intact. Detached chunks keep listening
+for their own hard impacts, so a chunk that breaks off and then slams into something else can
+fracture further.
+
+Combine it with `Explode`/`Slice` for a more dramatic initial kick before gravity takes over -
+just expect the welded pieces to settle into one shared velocity almost immediately, since
+they're rigidly connected.
 
 ### `Slice = { Normal: Vector3?, Speed: number? }`
 

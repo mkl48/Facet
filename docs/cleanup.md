@@ -46,7 +46,7 @@ has a velocity to move with, the debris sits exactly where it was sliced, and `R
 "Cleanup looks broken" report - it's actually an Effects gap, not a Cleanup one.
 
 Fix it by setting `Effects.Anchored = false` (lets the slice fall/fly under whatever velocity you
-gave it) or, for an actual structural collapse, `Effects.Unstable = true` - see
+gave it) or, for an actual structural collapse, `Effects.Chunk = true` - see
 [Effects](./effects) for the full breakdown.
 
 ## Per-voxel cleanup

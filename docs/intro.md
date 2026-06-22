@@ -38,7 +38,7 @@ instead of staying one part per cell.
 
 - [Getting started](./getting-started) - install Facet and run your first Shatter
 - [Hitboxes](./hitboxes) - the four query types, indiscriminate destruction, and how detection works
-- [Effects](./effects) - Explode, Unstable, Slice, Blackhole, Whitehole, Scatter, Shrink, and why debris sometimes doesn't move
+- [Effects](./effects) - Explode, Chunk, Slice, Blackhole, Whitehole, Scatter, Shrink, and why debris sometimes doesn't move
 - [Cleanup](./cleanup) - Rebuild, Fade, Destroy, and writing your own
 - [Configuration](./configuration) - turn object pooling, multithreading, and greedy meshing on/off
 

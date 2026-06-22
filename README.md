@@ -63,9 +63,10 @@ destroy, or your own function), and a `Result` you can chain off of with `:Next(
   hitbox.
 - **Composable cleanup** - `Cleanup = { Method = Enums.Cleanup.Rebuild / Fade / Destroy, Delay = number? }`,
   or pass your own `{ Method = function(voxel) ... end }`.
-- **Eight Effects** - `Explode`, `Anchored`, `Unstable` (real structural collapse - unanchors
-  everything a Shatter call produced, including `Extra`, so removing a building's support
-  actually makes it fall), `Slice` (splits debris either side of a plane apart), `Blackhole` /
+- **Eight Effects** - `Explode`, `Anchored`, `Chunk` (real structural collapse - welds everything
+  a Shatter call produced, including `Extra`, into one unanchored rigid assembly that falls as a
+  single piece once a building's support is cut away, then fractures into smaller chunks on a
+  hard enough landing), `Slice` (splits debris either side of a plane apart), `Blackhole` /
   `Whitehole` (pull toward / launch away from a point), `Scatter`, and `Shrink` - see
   [docs/effects](https://mkl48.github.io/Facet/effects).
 - **Richer voxels** - every produced `Voxel` carries `OriginalPosition`/`OriginalOrientation`
@@ -193,8 +194,9 @@ Wall:Shatter({
 ```
 
 See [docs/effects](https://mkl48.github.io/Facet/effects) for the full Effects reference -
-`Explode`, `Anchored`, `Unstable` (real structural collapse - unanchors everything produced,
-including `Extra`, so a building actually falls once you cut its support out), `Slice`
+`Explode`, `Anchored`, `Chunk` (real structural collapse - welds everything produced, including
+`Extra`, into one unanchored assembly so a building falls as a single piece once you cut its
+support out, fracturing into smaller chunks on a hard landing), `Slice`
 (splits debris either side of a plane apart), `Blackhole`/`Whitehole` (pull toward/launch away
 from a point), and `Scatter`/`Shrink`.
 

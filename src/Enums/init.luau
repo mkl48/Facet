@@ -43,15 +43,19 @@ local Enums = {}
 
 --[=[
 	@within Enums
-	@prop Effects {Explode: "Explode", Anchored: "Anchored", Unstable: "Unstable", Slice: "Slice", Blackhole: "Blackhole", Whitehole: "Whitehole", Scatter: "Scatter", Shrink: "Shrink"}
+	@prop Effects {Explode: "Explode", Anchored: "Anchored", Chunk: "Chunk", Slice: "Slice", Blackhole: "Blackhole", Whitehole: "Whitehole", Scatter: "Scatter", Shrink: "Shrink"}
 	Keys into `ShatterConfig.Effects`. See [docs/effects](https://mkl48.github.io/Facet/effects) for
 	the full config shape each one reads:
 
 	- `Explode = {Radius: number}` - pushes the voxel outward from the Shatter origin.
 	- `Anchored = boolean` - sets the produced part's `Anchored` directly.
-	- `Unstable = boolean` - unanchors every produced voxel (Partial *and* Extra) regardless of
-	  `Anchored`/the original part's own state, with a small random spin, so a cut that removes a
-	  building's support actually lets the remainder fall under gravity instead of floating.
+	- `Chunk = boolean | {BreakSpeed: number?, BreakRadius: number?}` - welds every voxel a
+	  Shatter call produced (Partial *and* Extra) into one unanchored rigid assembly, so the
+	  remainder of a building falls as a single piece once its support is cut away, instead of
+	  every voxel tumbling apart individually. A weld breaks - detaching that piece and everything
+	  within `BreakRadius` studs of it (default `4`) - the moment its relative impact speed against
+	  whatever it hit reaches `BreakSpeed` studs/sec (default `40`), so the assembly fractures into
+	  smaller chunks on a hard enough landing instead of staying one rigid lump forever.
 	- `Slice = {Normal: Vector3?, Speed: number?}` - splits voxels either side of a plane (through
 	  the Shatter origin, facing `Normal`) apart along that normal at `Speed` studs/sec.
 	- `Blackhole = {Position: Vector3?, Duration: number?}` - tweens the voxel into `Position`
@@ -91,7 +95,7 @@ export type HitboxType = "Whole" | "Partial"
 -- distance test, and Raycast casts directly (single closest hit - see README).
 export type QueryType = "Raycast" | "Box" | "Sphere" | "Region"
 
-export type Effects = "Explode" | "Anchored" | "Unstable" | "Slice" | "Blackhole" | "Whitehole" | "Scatter" | "Shrink"
+export type Effects = "Explode" | "Anchored" | "Chunk" | "Slice" | "Blackhole" | "Whitehole" | "Scatter" | "Shrink"
 
 export type Cleanup = "Rebuild" | "Fade" | "Destroy"
 
@@ -122,7 +126,7 @@ Enums.QueryType = {
 Enums.Effects = {
 	Explode = "Explode",
 	Anchored = "Anchored",
-	Unstable = "Unstable",
+	Chunk = "Chunk",
 	Slice = "Slice",
 	Blackhole = "Blackhole",
 	Whitehole = "Whitehole",

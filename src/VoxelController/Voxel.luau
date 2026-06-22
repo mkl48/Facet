@@ -127,18 +127,6 @@ local function applyEffects(instance: BasePart, effects: { [string]: any }?, ori
 			instance.Anchored = value :: boolean
 		elseif key == "Velocity" then
 			instance.AssemblyLinearVelocity = value :: Vector3
-		elseif key == Enums.Effects.Unstable then
-			-- Unanchors regardless of the original part's Anchored state and every other Effect
-			-- in this same table - a cut that removes a building's support should actually let
-			-- the remainder fall, not sit frozen because nothing else unanchored it.
-			if value then
-				instance.Anchored = false
-				instance.AssemblyAngularVelocity = Vector3.new(
-					(math.random() - 0.5) * 2,
-					(math.random() - 0.5) * 2,
-					(math.random() - 0.5) * 2
-				)
-			end
 		elseif key == Enums.Effects.Slice then
 			local config = value :: { Normal: Vector3?, Speed: number? }
 			local normal = (config.Normal or Vector3.new(0, 1, 0))

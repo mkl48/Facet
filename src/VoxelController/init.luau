@@ -363,7 +363,88 @@ function VoxelController:_emitCells(part: BasePart, config: ShatterConfig, origi
 	end
 
 	part:Destroy()
+
+	local chunkConfig = config.Effects and config.Effects[Enums.Effects.Chunk]
+	if chunkConfig then
+		self:_makeChunk(produced.Partial, produced.Extra, chunkConfig)
+	end
+
 	return produced
+end
+
+-- Effects.Chunk: welds every voxel this one part produced into a single unanchored rigid
+-- assembly (a star topology - every piece welded straight to the first piece, `root`) instead of
+-- the per-voxel unanchor every other Effect does, so the remainder of a building falls as one
+-- piece once its support is gone, rather than every tiny voxel tumbling apart on its own. A
+-- weld breaks - detaching that piece and everything within BreakRadius of it - the moment its
+-- relative impact speed reaches BreakSpeed, so a hard enough landing fractures the assembly into
+-- smaller chunks instead of staying one rigid lump forever.
+function VoxelController:_makeChunk(partial: { VoxelModule.Voxel }, extra: { VoxelModule.Voxel }, chunkConfig: any)
+	local settings = if type(chunkConfig) == "table" then chunkConfig else {}
+	local breakSpeed = settings.BreakSpeed or 40
+	local breakRadius = settings.BreakRadius or 4
+
+	local pieces: { BasePart } = {}
+	for _, voxel in partial do
+		table.insert(pieces, voxel.Instance)
+	end
+	for _, voxel in extra do
+		table.insert(pieces, voxel.Instance)
+	end
+	for _, piece in pieces do
+		piece.Anchored = false
+	end
+	if #pieces < 2 then
+		return
+	end
+
+	local root = pieces[1]
+	local welds: { [BasePart]: WeldConstraint } = {}
+	for i = 2, #pieces do
+		local piece = pieces[i]
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = root
+		weld.Part1 = piece
+		weld.Parent = piece
+		welds[piece] = weld
+	end
+
+	local connections: { RBXScriptConnection } = {}
+	local remaining = #pieces - 1
+
+	local function detachNear(position: Vector3)
+		for piece, weld in welds do
+			if (piece.Position - position).Magnitude <= breakRadius then
+				weld:Destroy()
+				welds[piece] = nil
+				remaining -= 1
+			end
+		end
+		if remaining <= 0 then
+			for _, connection in connections do
+				connection:Disconnect()
+			end
+		end
+	end
+
+	local lastCheck: { [BasePart]: number } = {}
+	for _, piece in pieces do
+		table.insert(
+			connections,
+			piece.Touched:Connect(function(other: BasePart)
+				local now = os.clock()
+				if (lastCheck[piece] or 0) + 0.1 > now then
+					return
+				end
+				lastCheck[piece] = now
+				local otherVelocity = if other:IsA("BasePart") then other.AssemblyLinearVelocity else Vector3.zero
+				local relativeSpeed = (piece.AssemblyLinearVelocity - otherVelocity).Magnitude
+				if relativeSpeed >= breakSpeed then
+					detachNear(piece.Position)
+				end
+			end)
+		)
+	end
 end
 
 -- The single-part path: builds the job and computes its cells inline, on the calling thread.
