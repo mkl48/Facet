@@ -20,13 +20,18 @@ local function folder(name, parent)
 	return f
 end
 
--- Script/LocalScript children (e.g. Workers' worker template) - left Enabled = false since
--- they're only meant to run after being cloned into a purpose-built Actor at runtime.
-local function inst(className, name, parent, source)
+-- Script/LocalScript children (e.g. Workers' worker templates) - left Enabled = false since
+-- they're only meant to run after being cloned into a purpose-built Actor at runtime. The
+-- command bar runs with Studio/Plugin capability, so setting RunContext here (once, at install
+-- time) works - a live game script mutating it later would not.
+local function inst(className, name, parent, source, runContext)
 	local s = Instance.new(className)
 	s.Name = name
 	s.Source = source
 	s.Enabled = false
+	if runContext then
+		s.RunContext = Enum.RunContext[runContext]
+	end
 	s.Parent = parent
 	return s
 end
@@ -99,7 +104,67 @@ local _2 = mod("Enums", _1, [[
 -- Enums/init.luau
 -- Plinko Labs
 
+--[=[
+	@class Enums
+	Every string-enum Facet's config and Result objects use. Each one is also re-exported as a
+	type off the top-level `Facet` module (`Facet.ControllerType`, `Facet.RuntimeType`, etc.), so
+	you don't need to reach into `Facet.Enums` just to annotate a variable.
+]=]
 local Enums = {}
+
+--[=[
+	@within Enums
+	@prop ControllerType {Relative: "Relative", Absolute: "Absolute"}
+	Passed as `DefineConfig.Type`. `Relative` sizes dynamically toward `RecommendedVoxelSize`
+	and splits multi-part Shatter calls across the Workers Actor pool; `Absolute` uses a fixed
+	`VoxelSize` and never threads.
+]=]
+
+--[=[
+	@within Enums
+	@prop RuntimeType {Instant: "Instant", Timeline: "Timeline"}
+	Passed as `DefineConfig.RuntimeType`. `Instant` (default) runs every `Shatter` call the
+	moment it's called; `Timeline` queues calls until `Controller:Start()` flushes them in order.
+]=]
+
+--[=[
+	@within Enums
+	@prop HitboxType {Whole: "Whole", Partial: "Partial"}
+	Passed as `HitboxConfig.HitboxType`. `Partial` (default) slices whatever the hitbox finds;
+	`Whole` returns parts the hitbox fully contains untouched, with no slicing.
+]=]
+
+--[=[
+	@within Enums
+	@prop QueryType {Raycast: "Raycast", Box: "Box", Sphere: "Sphere", Region: "Region"}
+	Passed as `HitboxConfig.QueryType`. Mirrors Roblox's own spatial query kinds. `Box`/`Region`
+	run through the Octree + an exact box/AABB test, `Sphere` through the Octree + a distance
+	test, and `Raycast` casts directly through the engine (single closest hit - see the README's
+	Raycast caveat).
+]=]
+
+--[=[
+	@within Enums
+	@prop Effects {Explode: "Explode", Anchored: "Anchored"}
+	Keys into `ShatterConfig.Effects`. `Explode = {Radius: number}` pushes the voxel outward
+	from the Shatter origin; `Anchored = boolean` sets the produced part's `Anchored` directly.
+]=]
+
+--[=[
+	@within Enums
+	@prop Cleanup {Rebuild: "Rebuild", Fade: "Fade", Destroy: "Destroy"}
+	Passed as `ShatterConfig.Cleanup`, or to `Voxel:Cleanup` directly. `Destroy` is instant;
+	`Fade` tweens `Transparency` to 1 then destroys; `Rebuild` tweens the voxel's `CFrame` back
+	to `OriginalCFrame` and never destroys it.
+]=]
+
+--[=[
+	@within Enums
+	@prop Event {NewVoxel: "NewVoxel", Destroyed: "Destroyed"}
+	Passed to `PendingResult:Next`. `NewVoxel` fires once, right after voxelization/Effects;
+	`Destroyed` fires once every `Partial` voxel from that call has actually been destroyed by
+	Cleanup (never fires if `Cleanup` was `Rebuild` or unset).
+]=]
 
 export type ControllerType = "Relative" | "Absolute"
 
@@ -1311,6 +1376,11 @@ local _4 = mod("Workers", _3, [[
 -- a desynchronized Actor. Instance creation always happens back on the calling thread once
 -- every job's plain {CFrame, Size, Color, Material, Kind} result comes back.
 --
+-- RunContext (Server/Client) can only be written from Studio/Plugin capability, never from a
+-- live game script - so the pool clones a pre-baked "Worker" (Server) or "WorkerClient" (Client)
+-- template instead of mutating RunContext at runtime. Both templates are baked at sync/install
+-- time (see default.project.json's $properties and scripts/build-installer.luau's inst() calls).
+--
 -- NOTE: this can't be exercised by `lune run` - headless Lune has no Actor/parallel Luau
 -- support at all, so this module has only been verified by reading against the documented
 -- Actor/SendMessage/BindToMessageParallel APIs, not by an actual Studio run. computeAsync()
@@ -1356,13 +1426,17 @@ end
 
 local function buildPool(): { Actor }?
 	local ok, actors = pcall(function()
-		local runContext = if RunService:IsServer() then Enum.RunContext.Server else Enum.RunContext.Client
+		-- RunContext can't be set from a live game script (Studio/Plugin-only capability) -
+		-- so we ship two pre-baked templates instead of mutating one at runtime. See
+		-- default.project.json / scripts/build-installer.luau for where each gets its RunContext.
+		local templateName = if RunService:IsServer() then "Worker" else "WorkerClient"
+		local template = (script :: Instance):FindFirstChild(templateName) :: Script?
+		assert(template, `Facet Workers: missing "{templateName}" template`)
 		local built = {}
 		for i = 1, POOL_SIZE do
 			local actor = Instance.new("Actor")
 			actor.Name = "FacetWorker" .. i
-			local worker = (script :: Instance).Worker:Clone() :: Script
-			worker.RunContext = runContext
+			local worker = template:Clone()
 			worker.Enabled = true
 			worker.Parent = actor
 			actor.Parent = script
@@ -1467,7 +1541,39 @@ actor:BindToMessageParallel("ComputeCells", function(reply: BindableEvent, grid:
 	task.synchronize()
 	reply:Fire(cells)
 end)
-]])
+]], "Server")
+inst("Script", "WorkerClient", _4, [[
+-- Facet
+-- VoxelController/Workers/Worker.server.luau
+-- Plinko Labs
+--
+-- Cloned into a fresh Actor by Workers.computeAsync() and run with RunContext forced to match
+-- whichever realm called Shatter (it's parented under ReplicatedStorage, where a Legacy-context
+-- Script would never run on its own). Binds in parallel: BindToMessageParallel hands this
+-- function its own desynchronized thread per message, so jobs for different Actors genuinely
+-- run at the same time. Touches no Instance except the `reply` BindableEvent it's handed, and
+-- only after resynchronizing - everything in between is Voxelize, which is pure.
 
-print("[Facet] installed 9 modules under ReplicatedStorage.Facet")
+local Voxelize = require(script.Parent.Parent.Voxelize)
+
+local actor = script:GetActor()
+assert(actor, "Worker.server.luau must run inside an Actor")
+
+actor:BindToMessageParallel("ComputeCells", function(reply: BindableEvent, grid: Voxelize.Grid, hitbox: Voxelize.PointHitbox?)
+	local classify = if hitbox
+		then function(pos: Vector3)
+			return Voxelize.classifyPoint(pos, hitbox)
+		end
+		else function()
+			return "Partial"
+		end
+
+	local cells = Voxelize.computeCells(grid, classify)
+
+	task.synchronize()
+	reply:Fire(cells)
+end)
+]], "Client")
+
+print("[Facet] installed 10 modules under ReplicatedStorage.Facet")
 return true

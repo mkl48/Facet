@@ -10,8 +10,10 @@
 -- with a safe `=` level (see longString below), so it reads verbatim and takes no escapes.
 --
 -- Script/LocalScript children are created Enabled = false: most of them (e.g. Workers' worker
--- template) are only ever meant to run after being cloned into a purpose-built Actor at
--- runtime, not as-installed.
+-- templates) are only ever meant to run after being cloned into a purpose-built Actor at
+-- runtime, not as-installed. Worker.server.luau specifically gets bundled twice - "Worker"
+-- (RunContext = Server) and "WorkerClient" (RunContext = Client) - since RunContext can't be
+-- set from a live game script later (Studio/Plugin-only capability); see Workers/init.luau.
 
 local fs = require("@lune/fs")
 
@@ -131,6 +133,14 @@ local function build(dir: string, parentVar: string, name: string): string
 			local className = classNameFor(entry)
 			if className == "ModuleScript" then
 				emit(`mod({q(childName)}, {var}, {longString(fs.readFile(path))})`)
+			elseif childName == "Worker" and entry == "Worker.server.luau" then
+				-- RunContext can only be set from Studio/Plugin capability (the command bar
+				-- counts), never at live game runtime - so bake both realm templates here
+				-- instead of leaving Workers/init.luau to mutate RunContext later.
+				local source = longString(fs.readFile(path))
+				emit(`inst({q(className)}, {q("Worker")}, {var}, {source}, "Server")`)
+				moduleCount += 1
+				emit(`inst({q(className)}, {q("WorkerClient")}, {var}, {source}, "Client")`)
 			else
 				emit(`inst({q(className)}, {q(childName)}, {var}, {longString(fs.readFile(path))})`)
 			end
@@ -165,13 +175,18 @@ local function folder(name, parent)
 	return f
 end
 
--- Script/LocalScript children (e.g. Workers' worker template) - left Enabled = false since
--- they're only meant to run after being cloned into a purpose-built Actor at runtime.
-local function inst(className, name, parent, source)
+-- Script/LocalScript children (e.g. Workers' worker templates) - left Enabled = false since
+-- they're only meant to run after being cloned into a purpose-built Actor at runtime. The
+-- command bar runs with Studio/Plugin capability, so setting RunContext here (once, at install
+-- time) works - a live game script mutating it later would not.
+local function inst(className, name, parent, source, runContext)
 	local s = Instance.new(className)
 	s.Name = name
 	s.Source = source
 	s.Enabled = false
+	if runContext then
+		s.RunContext = Enum.RunContext[runContext]
+	end
 	s.Parent = parent
 	return s
 end

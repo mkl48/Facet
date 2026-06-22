@@ -9,6 +9,11 @@
 -- a desynchronized Actor. Instance creation always happens back on the calling thread once
 -- every job's plain {CFrame, Size, Color, Material, Kind} result comes back.
 --
+-- RunContext (Server/Client) can only be written from Studio/Plugin capability, never from a
+-- live game script - so the pool clones a pre-baked "Worker" (Server) or "WorkerClient" (Client)
+-- template instead of mutating RunContext at runtime. Both templates are baked at sync/install
+-- time (see default.project.json's $properties and scripts/build-installer.luau's inst() calls).
+--
 -- NOTE: this can't be exercised by `lune run` - headless Lune has no Actor/parallel Luau
 -- support at all, so this module has only been verified by reading against the documented
 -- Actor/SendMessage/BindToMessageParallel APIs, not by an actual Studio run. computeAsync()
@@ -54,13 +59,17 @@ end
 
 local function buildPool(): { Actor }?
 	local ok, actors = pcall(function()
-		local runContext = if RunService:IsServer() then Enum.RunContext.Server else Enum.RunContext.Client
+		-- RunContext can't be set from a live game script (Studio/Plugin-only capability) -
+		-- so we ship two pre-baked templates instead of mutating one at runtime. See
+		-- default.project.json / scripts/build-installer.luau for where each gets its RunContext.
+		local templateName = if RunService:IsServer() then "Worker" else "WorkerClient"
+		local template = (script :: Instance):FindFirstChild(templateName) :: Script?
+		assert(template, `Facet Workers: missing "{templateName}" template`)
 		local built = {}
 		for i = 1, POOL_SIZE do
 			local actor = Instance.new("Actor")
 			actor.Name = "FacetWorker" .. i
-			local worker = (script :: Instance).Worker:Clone() :: Script
-			worker.RunContext = runContext
+			local worker = template:Clone()
 			worker.Enabled = true
 			worker.Parent = actor
 			actor.Parent = script

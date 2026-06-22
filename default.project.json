@@ -1,6 +1,21 @@
 {
 	"name": "Facet",
 	"tree": {
-		"$path": "src"
+		"$path": "src",
+		"VoxelController": {
+			"Workers": {
+				"Worker": {
+					"$properties": {
+						"RunContext": "Server"
+					}
+				},
+				"WorkerClient": {
+					"$path": "src/VoxelController/Workers/Worker.server.luau",
+					"$properties": {
+						"RunContext": "Client"
+					}
+				}
+			}
+		}
 	}
 }
