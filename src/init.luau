@@ -18,6 +18,7 @@ Facet.Enums = Enums
 export type DefineConfig = VoxelController.DefineConfig
 export type ShatterConfig = VoxelController.ShatterConfig
 export type HitboxConfig = VoxelController.HitboxConfig
+export type VoxelController = VoxelController.VoxelController
 
 --[=[
 	@within Facet
@@ -26,7 +27,7 @@ export type HitboxConfig = VoxelController.HitboxConfig
 	(fixed VoxelSize). Pass `Host` to scope every Shatter call on the controller to one
 	instance without naming a Target each time.
 ]=]
-function Facet.Define(config: DefineConfig)
+function Facet.Define(config: DefineConfig): VoxelController
 	return VoxelController.new(config)
 end
 

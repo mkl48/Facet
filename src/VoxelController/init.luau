@@ -48,10 +48,26 @@ export type DefineConfig = {
 	VoxelSize: number?,
 }
 
+-- The actual instance Facet.Define()/VoxelController.new() hands back. Typed explicitly (and
+-- returned through this type, not `any`) so callers get real Intellisense on `:Shatter()`,
+-- `:Start()`, `:Destroy()`, and the controller's own fields instead of `any`.
+export type VoxelController = {
+	Type: Enums.ControllerType,
+	RuntimeType: Enums.RuntimeType,
+	Host: Instance?,
+	Drivers: { VoxelizationMethod: string? }?,
+	MinimumVoxelSize: number?,
+	RecommendedVoxelSize: number?,
+	VoxelSize: number?,
+	Shatter: (self: VoxelController, a: Instance | ShatterConfig, b: ShatterConfig?) -> PendingResult.PendingResult,
+	Start: (self: VoxelController) -> (),
+	Destroy: (self: VoxelController) -> (),
+}
+
 local VoxelController = {}
 VoxelController.__index = VoxelController
 
-function VoxelController.new(config: DefineConfig)
+function VoxelController.new(config: DefineConfig): VoxelController
 	assert(config.Type == Enums.ControllerType.Relative or config.Type == Enums.ControllerType.Absolute, "Define requires Type to be Enums.ControllerType.Relative or .Absolute")
 
 	local self = setmetatable({
@@ -73,7 +89,7 @@ function VoxelController.new(config: DefineConfig)
 		self.VoxelSize = config.VoxelSize
 	end
 
-	return (self :: any)
+	return (self :: any) :: VoxelController
 end
 
 function VoxelController:_voxelSizeFor(part: BasePart): number
