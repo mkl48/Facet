@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Hitboxes | Facet</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://mkl48.github.io/Facet/docs/hitboxes"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Hitboxes | Facet"><meta data-rh="true" name="description" content="A Shatter call with no Hitbox voxelizes the whole target - no detection step at all."><meta data-rh="true" property="og:description" content="A Shatter call with no Hitbox voxelizes the whole target - no detection step at all."><link data-rh="true" rel="icon" href="/Facet/favicon.png"><link data-rh="true" rel="canonical" href="https://mkl48.github.io/Facet/docs/hitboxes"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/docs/hitboxes" hreflang="en"><link data-rh="true" rel="alternate" href="https://mkl48.github.io/Facet/docs/hitboxes" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Hitboxes","item":"https://mkl48.github.io/Facet/docs/hitboxes"}]}</script><link rel="stylesheet" href="/Facet/assets/css/styles.ae967cf2.css">
-<script src="/Facet/assets/js/runtime~main.9866d9f4.js" defer="defer"></script>
-<script src="/Facet/assets/js/main.ecadb68b.js" defer="defer"></script>
+<script src="/Facet/assets/js/runtime~main.44e949ca.js" defer="defer"></script>
+<script src="/Facet/assets/js/main.dc26941f.js" defer="defer"></script>
 </head>
 <body>
 <svg style="display: none;"><defs>
@@ -29,6 +29,12 @@ result into <code>Partial</code> (inside the hitbox) and <code>Extra</code> (out
 skips slicing entirely for parts the hitbox <em>fully</em> contains - those come back untouched in
 <code>Result.Voxels.Whole</code>, each one still carrying a <code>:Shatter()</code> you can call later with no
 hitbox needed.</p>
+<p>If <code>Target</code> is a multi-part <code>Model</code>, only the parts the hitbox actually overlaps go through
+detection at all - any other part of that same <code>Model</code> (say, the floors above a foundation cut)
+never enters that step. Those parts still end up in <code>Result.Voxels.Extra</code>, unsliced but with
+<code>Effects</code> applied, specifically so <code>Effects.Chunk</code> can weld them into the same falling assembly
+as the slice itself - otherwise the building above the cut would just sit there inert, never
+having been touched by anything. See <a class="" href="/Facet/docs/effects">Effects</a> for <code>Chunk</code>.</p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="caveats">Caveats<a href="#caveats" class="hash-link" aria-label="Direct link to Caveats" title="Direct link to Caveats" translate="no">​</a></h2>
 <p><code>Raycast</code> casts once through the engine and only resolves the single closest hit along
 <code>ViewVector</code> - there&#x27;s no multi-hit walk through everything the ray passes through. If you
